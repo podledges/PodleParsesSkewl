@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -260,6 +261,46 @@ class DoctorTests(unittest.TestCase):
 
             self.assertEqual(code, 0)
             self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+    def test_render_output_over_an_existing_file_is_a_user_error(self) -> None:
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(document, folder)
+            blocker = folder / "blocker"
+            blocker.write_text("not a directory", encoding="utf-8")
+            code = main(["render", str(path), "-o", str(blocker)])
+        self.assertEqual(code, 2)
+
+    @unittest.skipIf(
+        hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores directory permissions"
+    )
+    def test_render_into_a_read_only_folder_is_a_user_error(self) -> None:
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(document, folder)
+            locked = folder / "locked"
+            locked.mkdir()
+            locked.chmod(0o500)
+            try:
+                code = main(["render", str(path), "-o", str(locked / "out")])
+            finally:
+                locked.chmod(0o700)
+        self.assertEqual(code, 2)
+
+    def test_render_rejects_a_wrong_typed_document(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            payload = _render_fixture_document().to_json_dict()
+            payload["stills"][0]["start_seconds"] = "0 seconds in"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            code = main(["render", str(path)])
+        self.assertEqual(code, 2)
 
     def test_render_rejects_a_structurally_invalid_document(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

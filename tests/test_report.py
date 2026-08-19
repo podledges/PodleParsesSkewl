@@ -37,6 +37,18 @@ def _document() -> LectureDocument:
     )
 
 
+def _assign(payload: dict, dotted: str, value: object) -> None:
+    target = payload
+    keys = dotted.split(".")
+    for key in keys[:-1]:
+        target = target[int(key)] if key.isdigit() else target[key]
+    last = keys[-1]
+    if last.isdigit():
+        target[int(last)] = value
+    else:
+        target[last] = value
+
+
 class ReportTests(unittest.TestCase):
     def test_html_pairs_each_still_with_a_separator_and_said_text(self) -> None:
         html = render_html(_document())
@@ -110,6 +122,37 @@ class ReportTests(unittest.TestCase):
         with self.assertRaises(PpsError) as raised:
             LectureDocument.from_json_dict({"title": "x"})
         self.assertIn("source", str(raised.exception))
+
+    def test_wrong_typed_fields_are_user_errors_not_renderer_crashes(self) -> None:
+        from podleparsesskewl.errors import PpsError
+
+        payload = _document().to_json_dict()
+        broken = {
+            "title": None,
+            "stills.0.start_seconds": "half past",
+            "stills.0.image": 5,
+            "stills.0.index": "first",
+            "sections.0.said": None,
+            "source.duration_seconds": {},
+            "transcript.cues.0.text": 7,
+            "stills": "still-001",
+            "transcript": [],
+        }
+        for field, value in broken.items():
+            with self.subTest(field=field):
+                candidate = json.loads(json.dumps(payload))
+                _assign(candidate, field, value)
+                with self.assertRaises(PpsError) as raised:
+                    LectureDocument.from_json_dict(candidate)
+                self.assertIn(field.split(".")[0], str(raised.exception))
+
+    def test_numeric_strings_are_accepted_for_times(self) -> None:
+        payload = _document().to_json_dict()
+        payload["stills"][0]["start_seconds"] = "0"
+        payload["source"]["duration_seconds"] = "10"
+        document = LectureDocument.from_json_dict(payload)
+        self.assertEqual(document.stills[0].start_seconds, 0.0)
+        self.assertIn("00:00:10", render_html(document))
 
     def test_document_round_trip_json(self) -> None:
         document = _document()

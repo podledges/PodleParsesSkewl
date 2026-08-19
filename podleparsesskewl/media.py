@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from podleparsesskewl.deps import Environment
-from podleparsesskewl.errors import PpsError
+from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.stills import (
     DEFAULT_SAMPLE_FPS,
     DEFAULT_SAMPLE_HEIGHT,
@@ -95,7 +95,8 @@ def sample_signatures(
 ) -> list[FrameSignature]:
     if not env.ffmpeg.found or env.ffmpeg.path is None:
         raise PpsError("ffmpeg is required to sample frames from a Recording")
-    work_dir.mkdir(parents=True, exist_ok=True)
+    with writing(f"the work folder {work_dir}"):
+        work_dir.mkdir(parents=True, exist_ok=True)
     raw_path = work_dir / "signatures.gray"
     command = [
         str(env.ffmpeg.path),
@@ -114,7 +115,10 @@ def sample_signatures(
     ]
     _run(command, "ffmpeg frame sampling")
     frame_size = width * height
-    data = raw_path.read_bytes()
+    try:
+        data = raw_path.read_bytes()
+    except OSError as exc:
+        raise PpsError(f"could not read sampled frames from {raw_path}: {exc}") from exc
     frames: list[FrameSignature] = []
     for index in range(0, len(data) // frame_size):
         offset = index * frame_size
@@ -138,7 +142,8 @@ def extract_still_png(
 ) -> None:
     if not env.ffmpeg.found or env.ffmpeg.path is None:
         raise PpsError("ffmpeg is required to extract Still images")
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    with writing(f"the folder for {dest}"):
+        dest.parent.mkdir(parents=True, exist_ok=True)
     command = [
         str(env.ffmpeg.path),
         "-v",
@@ -166,7 +171,8 @@ def extract_audio_wav(
 ) -> Path:
     if not env.ffmpeg.found or env.ffmpeg.path is None:
         raise PpsError("ffmpeg is required to extract audio for transcription")
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    with writing(f"the folder for {dest}"):
+        dest.parent.mkdir(parents=True, exist_ok=True)
     command = [
         str(env.ffmpeg.path),
         "-v",

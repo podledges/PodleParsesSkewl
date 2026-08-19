@@ -95,7 +95,9 @@ End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain 
 
 The program looks next to the MP4 for `lecture.srt`, `lecture.vtt`, or `lecture.json`. If one is present, it is used and audio is not transcribed. If none is present, a local engine is required.
 
-A JSON sidecar must be a list of cues, or an object holding a `cues` or `segments` list, where each cue has `start`/`end` (seconds or `HH:MM:SS.mmm`) and `text`. A sidecar that yields no cues is an error rather than an empty transcript.
+A JSON sidecar must be a list of cues, or an object holding a `cues` or `segments` list, where each cue has `start`/`end` (seconds or `HH:MM:SS.mmm`) and `text`.
+
+A sidecar always wins over audio, so an empty or unreadable one stops the run instead of quietly producing a Lecture with no Said. If a capture tool left a stub `lecture.srt` behind and you want the audio transcribed, delete the stub and run `parse` again.
 
 A `lecture.json` Lecture Document sits at exactly the path a JSON sidecar would, so the program recognizes its own canonical output and never feeds it back in as a transcript. If a Recording has no audio track and no sidecar, `parse` says so instead of asking ffmpeg for audio that is not there.
 

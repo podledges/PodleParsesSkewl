@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from podleparsesskewl.align import align_cues_to_stills
 from podleparsesskewl.deps import Environment, inspect_environment
 from podleparsesskewl.document import LectureDocument, SourceInfo, Still, still_id, still_image_name
-from podleparsesskewl.errors import PpsError
+from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.media import extract_still_png, probe_recording, sample_signatures
 from podleparsesskewl.report import write_plain_views
 from podleparsesskewl.stills import (
@@ -59,9 +59,10 @@ def parse_recording(
         )
 
     output_dir = options.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
     work_dir = output_dir / "_work"
-    work_dir.mkdir(parents=True, exist_ok=True)
+    with writing(f"the Lecture folder {output_dir}"):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        work_dir.mkdir(parents=True, exist_ok=True)
 
     probe = probe_recording(recording, environment)
     if not probe.has_video:
@@ -163,27 +164,37 @@ def copy_still_images(
         if not reference:
             continue
         relative = PurePosixPath(reference)
-        if relative.is_absolute() or PureWindowsPath(reference).is_absolute():
+        windows = PureWindowsPath(reference)
+        if relative.is_absolute() or windows.is_absolute() or windows.drive:
             continue
-        if ".." in relative.parts:
+        if ".." in relative.parts or ".." in windows.parts:
             raise PpsError(f"Still image path escapes the Lecture folder: {reference}")
         source = source_dir / Path(*relative.parts)
         if not source.is_file():
             missing.append(reference)
             continue
         destination = output_dir / Path(*relative.parts)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
+        if not _inside(destination, output_dir):
+            raise PpsError(f"Still image path escapes the Lecture folder: {reference}")
+        with writing(f"Still image {destination}"):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
     return missing
 
 
+def _inside(candidate: Path, folder: Path) -> bool:
+    root = folder.resolve()
+    return root == candidate.resolve() or root in candidate.resolve().parents
+
+
 def write_document(document: LectureDocument, output_dir: Path) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "lecture.json"
-    path.write_text(
-        json.dumps(document.to_json_dict(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    with writing(f"the Lecture Document {path}"):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(document.to_json_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
     return path
 
 

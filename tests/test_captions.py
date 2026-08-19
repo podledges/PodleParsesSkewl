@@ -117,6 +117,24 @@ class CaptionTests(unittest.TestCase):
         self.assertIn("cues", message)
         self.assertIn("segments", message)
 
+    def test_empty_srt_stub_stops_the_run_with_a_recovery_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.srt"
+            path.write_text("", encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        message = str(raised.exception).lower()
+        self.assertIn("empty or invalid", message)
+        self.assertIn("remove it", message)
+
+    def test_header_only_vtt_stub_stops_the_run(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.vtt"
+            path.write_text("WEBVTT\n\n", encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("empty or invalid", str(raised.exception).lower())
+
     def test_json_sidecar_without_any_cue_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "lecture.json"

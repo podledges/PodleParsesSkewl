@@ -15,7 +15,7 @@ from podleparsesskewl.config import (
     load_config,
 )
 from podleparsesskewl.deps import format_doctor, inspect_environment
-from podleparsesskewl.errors import PpsError
+from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.pipeline import (
     ParseOptions,
     copy_still_images,
@@ -43,6 +43,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 2
     except PpsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
@@ -186,7 +189,8 @@ def _cmd_render(args: argparse.Namespace) -> int:
     document = load_document(args.document)
     source_dir = args.document.parent
     output = args.output if args.output is not None else source_dir
-    output.mkdir(parents=True, exist_ok=True)
+    with writing(f"the output folder {output}"):
+        output.mkdir(parents=True, exist_ok=True)
     relocated = output.resolve() != source_dir.resolve()
     if relocated:
         missing = copy_still_images(document, source_dir, output)

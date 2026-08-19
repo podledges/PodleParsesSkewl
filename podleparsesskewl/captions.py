@@ -60,8 +60,10 @@ def load_sidecar(path: Path) -> Transcript:
         raise PpsError(f"could not parse transcript sidecar {path}: {exc}") from exc
     if not cues:
         raise PpsError(
-            f"transcript sidecar {path} yielded no cues. Check that it is a caption "
-            "file with timed text, not an empty or differently shaped document."
+            f"caption sidecar {path} is empty or invalid: it yielded no cues. A sidecar "
+            "always wins over audio, so this Recording is not transcribed while the file "
+            "is there. Replace it with a caption file that has timed text, or remove it "
+            "to transcribe the audio instead."
         )
     return Transcript(cues=tuple(cues), source=source)
 

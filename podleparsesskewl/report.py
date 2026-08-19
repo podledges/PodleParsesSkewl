@@ -6,6 +6,7 @@ import html
 from pathlib import Path
 
 from podleparsesskewl.document import LectureDocument, Still
+from podleparsesskewl.errors import writing
 from podleparsesskewl.timefmt import format_clock
 
 _HTML_STYLE = """
@@ -78,8 +79,10 @@ def render_markdown(document: LectureDocument) -> str:
 def write_plain_views(document: LectureDocument, output_dir: Path) -> tuple[Path, Path]:
     html_path = output_dir / "lecture.html"
     md_path = output_dir / "lecture.md"
-    html_path.write_text(render_html(document), encoding="utf-8")
-    md_path.write_text(render_markdown(document), encoding="utf-8")
+    with writing(f"the plain views in {output_dir}"):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        html_path.write_text(render_html(document), encoding="utf-8")
+        md_path.write_text(render_markdown(document), encoding="utf-8")
     return html_path, md_path
 
 

@@ -53,6 +53,61 @@ def _make_two_still_recording(folder: Path, ffmpeg: str) -> Path:
     return dest
 
 
+class CopyStillImagesTests(unittest.TestCase):
+    def _document(self, image: str):
+        from podleparsesskewl.document import (
+            Cue,
+            LectureDocument,
+            Section,
+            SourceInfo,
+            Still,
+            Transcript,
+        )
+
+        return LectureDocument(
+            title="Lecture",
+            source=SourceInfo("lecture.mp4", 4.0, "sidecar:srt:lecture.srt"),
+            stills=(Still("still-001", 1, 0.0, 4.0, image),),
+            transcript=Transcript((Cue(1.0, 2.0, "Said."),), "sidecar:srt:lecture.srt"),
+            sections=(Section("still-001", "Said.", (0,)),),
+        )
+
+    def test_backslash_traversal_is_rejected(self) -> None:
+        from podleparsesskewl.pipeline import copy_still_images
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            target = folder / "out"
+            target.mkdir()
+            for reference in (
+                r"stills\..\..\evil.png",
+                "stills/../../evil.png",
+                r"..\evil.png",
+            ):
+                with self.subTest(reference=reference):
+                    with self.assertRaises(PpsError):
+                        copy_still_images(self._document(reference), source, target)
+            self.assertEqual(list(folder.glob("evil.png")), [])
+
+    def test_a_plain_relative_image_is_copied(self) -> None:
+        from podleparsesskewl.pipeline import copy_still_images
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            (source / "stills").mkdir(parents=True)
+            (source / "stills" / "still-001.png").write_bytes(b"\x89PNG")
+            target = folder / "out"
+            target.mkdir()
+            missing = copy_still_images(
+                self._document("stills/still-001.png"), source, target
+            )
+            self.assertEqual(missing, [])
+            self.assertTrue((target / "stills" / "still-001.png").is_file())
+
+
 class PipelineTests(unittest.TestCase):
     def test_parse_without_ffmpeg_is_a_clear_error(self) -> None:
         missing = ToolStatus("ffmpeg", False, None, "not installed")
