@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from podleparsesskewl.document import SCHEMA_V1, Cue, Transcript
+from podleparsesskewl.document import SCHEMA_V1, Cue, Transcript, finite_seconds
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.timefmt import parse_clock
 
@@ -174,12 +174,12 @@ def _json_seconds(item: dict, *keys: str) -> float:
     for key in keys:
         if key in item:
             value = item[key]
+            if not isinstance(value, str):
+                return finite_seconds(value, f"JSON cue {key}")
             try:
-                if isinstance(value, str):
-                    return parse_clock(value)
-                return float(value)
-            except (TypeError, ValueError) as exc:
-                raise PpsError(f"JSON cue has an invalid {key} value {value!r}") from exc
+                return parse_clock(value)
+            except ValueError:
+                return finite_seconds(value, f"JSON cue {key}")
     raise PpsError(f"JSON cue missing time field ({' / '.join(keys)})")
 
 

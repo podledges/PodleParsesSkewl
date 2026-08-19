@@ -165,22 +165,27 @@ def _as_text(value: Any, field: str) -> str:
     return value
 
 
+def finite_seconds(value: Any, label: str) -> float:
+    """Coerce a time to a finite float, the invariant every Document number holds.
+
+    Applied on the way in and on the way out, so the program can never write a
+    Lecture Document it would then refuse to read.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise PpsError(f"{label} is not a number of seconds: {value!r}") from exc
+    if not math.isfinite(number):
+        raise PpsError(f"{label} must be a finite number of seconds, got {value!r}")
+    return number
+
+
 def _as_seconds(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         raise PpsError(
             f"Lecture Document field {field} must be a number of seconds, got {_kind(value)}"
         )
-    try:
-        number = float(value)
-    except (ValueError, OverflowError) as exc:
-        raise PpsError(
-            f"Lecture Document field {field} is not a number of seconds: {value!r}"
-        ) from exc
-    if not math.isfinite(number):
-        raise PpsError(
-            f"Lecture Document field {field} must be a finite number of seconds, got {value!r}"
-        )
-    return number
+    return finite_seconds(value, f"Lecture Document field {field}")
 
 
 def _as_count(value: Any, field: str) -> int:

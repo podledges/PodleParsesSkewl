@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -21,6 +22,8 @@ from podleparsesskewl.stills import (
     segment_stills,
 )
 from podleparsesskewl.transcribe import load_transcript
+
+WORK_PREFIX = "_work-"
 
 
 @dataclass(frozen=True)
@@ -59,10 +62,9 @@ def parse_recording(
         )
 
     output_dir = options.output_dir
-    work_dir = output_dir / "_work"
     with writing(f"the Lecture folder {output_dir}"):
         output_dir.mkdir(parents=True, exist_ok=True)
-        work_dir.mkdir(parents=True, exist_ok=True)
+        work_dir = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=output_dir))
 
     probe = probe_recording(recording, environment)
     if not probe.has_video:
@@ -155,10 +157,14 @@ def copy_still_images(
     source_dir: Path,
     output_dir: Path,
 ) -> list[str]:
-    """Copy each Still image next to a relocated Document; return missing ones."""
+    """Copy each Still image next to a relocated Document.
+
+    Returns one message per reference that could not be made local, so the
+    caller can say why a copied view would show a broken image.
+    """
     if source_dir.resolve() == output_dir.resolve():
         return []
-    missing: list[str] = []
+    problems: list[str] = []
     for still in document.stills:
         reference = still.image
         if not reference:
@@ -166,12 +172,16 @@ def copy_still_images(
         relative = PurePosixPath(reference)
         windows = PureWindowsPath(reference)
         if relative.is_absolute() or windows.is_absolute() or windows.drive:
+            problems.append(
+                f"{reference} is an absolute path, so it was not copied into {output_dir}; "
+                "the rendered view still points at the original location"
+            )
             continue
         if ".." in relative.parts or ".." in windows.parts:
             raise PpsError(f"Still image path escapes the Lecture folder: {reference}")
         source = source_dir / Path(*relative.parts)
         if not source.is_file():
-            missing.append(reference)
+            problems.append(f"{reference} was not found in {source_dir}, so the copied view will show a broken image")
             continue
         destination = output_dir / Path(*relative.parts)
         if not _inside(destination, output_dir):
@@ -179,7 +189,7 @@ def copy_still_images(
         with writing(f"Still image {destination}"):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
-    return missing
+    return problems
 
 
 def _inside(candidate: Path, folder: Path) -> bool:
@@ -189,12 +199,20 @@ def _inside(candidate: Path, folder: Path) -> bool:
 
 def write_document(document: LectureDocument, output_dir: Path) -> Path:
     path = output_dir / "lecture.json"
+    try:
+        text = json.dumps(
+            document.to_json_dict(),
+            indent=2,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except ValueError as exc:
+        raise PpsError(
+            f"refusing to write {path}: the Lecture holds a number that is not valid JSON ({exc})"
+        ) from exc
     with writing(f"the Lecture Document {path}"):
         output_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(document.to_json_dict(), indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        path.write_text(text + "\n", encoding="utf-8")
     return path
 
 

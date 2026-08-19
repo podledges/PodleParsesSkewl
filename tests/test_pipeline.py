@@ -91,6 +91,36 @@ class CopyStillImagesTests(unittest.TestCase):
                         copy_still_images(self._document(reference), source, target)
             self.assertEqual(list(folder.glob("evil.png")), [])
 
+    def test_an_absolute_image_reference_is_reported_not_skipped(self) -> None:
+        from podleparsesskewl.pipeline import copy_still_images
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            target = folder / "out"
+            target.mkdir()
+            absolute = folder / "elsewhere" / "still-001.png"
+            problems = copy_still_images(self._document(str(absolute)), source, target)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(str(absolute), problems[0])
+        self.assertIn("absolute", problems[0])
+
+    def test_a_missing_image_reference_is_reported(self) -> None:
+        from podleparsesskewl.pipeline import copy_still_images
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            target = folder / "out"
+            target.mkdir()
+            problems = copy_still_images(
+                self._document("stills/still-001.png"), source, target
+            )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("stills/still-001.png", problems[0])
+
     def test_a_plain_relative_image_is_copied(self) -> None:
         from podleparsesskewl.pipeline import copy_still_images
 
@@ -101,11 +131,80 @@ class CopyStillImagesTests(unittest.TestCase):
             (source / "stills" / "still-001.png").write_bytes(b"\x89PNG")
             target = folder / "out"
             target.mkdir()
-            missing = copy_still_images(
+            problems = copy_still_images(
                 self._document("stills/still-001.png"), source, target
             )
-            self.assertEqual(missing, [])
+            self.assertEqual(problems, [])
             self.assertTrue((target / "stills" / "still-001.png").is_file())
+
+
+class WorkFolderTests(unittest.TestCase):
+    def test_parse_leaves_a_preexisting_work_folder_alone(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from podleparsesskewl.stills import (
+            DEFAULT_SAMPLE_HEIGHT,
+            DEFAULT_SAMPLE_WIDTH,
+            FrameSignature,
+        )
+
+        frames = [
+            FrameSignature(
+                time_seconds=float(index),
+                width=DEFAULT_SAMPLE_WIDTH,
+                height=DEFAULT_SAMPLE_HEIGHT,
+                samples=bytes([0]) * (DEFAULT_SAMPLE_WIDTH * DEFAULT_SAMPLE_HEIGHT),
+            )
+            for index in range(3)
+        ]
+        env = Environment(
+            ffmpeg=ToolStatus("ffmpeg", True, Path("/usr/bin/ffmpeg"), "stub"),
+            ffprobe=ToolStatus("ffprobe", True, Path("/usr/bin/ffprobe"), "stub"),
+            transcriber=ToolStatus("transcriber", False, None, "none"),
+        )
+
+        def fake_still(_recording, _timestamp, dest: Path, _env):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"\x89PNG")
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"stub")
+            (folder / "lecture.srt").write_text(
+                "1\n00:00:01,000 --> 00:00:02,000\nHello.\n", encoding="utf-8"
+            )
+            output = folder / "out"
+            precious = output / "_work" / "notes.txt"
+            precious.parent.mkdir(parents=True)
+            precious.write_text("someone else's file", encoding="utf-8")
+
+            with mock.patch(
+                "podleparsesskewl.pipeline.probe_recording",
+                return_value=SimpleNamespace(
+                    duration_seconds=3.0,
+                    width=640,
+                    height=480,
+                    has_audio=True,
+                    has_video=True,
+                ),
+            ):
+                with mock.patch(
+                    "podleparsesskewl.pipeline.sample_signatures", return_value=frames
+                ):
+                    with mock.patch(
+                        "podleparsesskewl.pipeline.extract_still_png", side_effect=fake_still
+                    ):
+                        parse_recording(
+                            recording, ParseOptions(output_dir=output), env=env
+                        )
+
+            self.assertTrue(precious.is_file())
+            self.assertEqual(precious.read_text(encoding="utf-8"), "someone else's file")
+            self.assertEqual(
+                [path.name for path in output.glob("_work-*")], [], "run scratch was left behind"
+            )
 
 
 class PipelineTests(unittest.TestCase):
@@ -154,4 +253,4 @@ class PipelineTests(unittest.TestCase):
             rebuilt = render_html(result.document)
             self.assertIn("<hr>", rebuilt)
             self.assertEqual(result.document.source.transcript_source, "sidecar:srt:lecture.srt")
-            self.assertFalse((output / "_work").exists())
+            self.assertEqual(list(output.glob("_work*")), [])

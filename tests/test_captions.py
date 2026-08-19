@@ -102,6 +102,20 @@ class CaptionTests(unittest.TestCase):
                 load_sidecar(path)
         self.assertIn("start", str(raised.exception))
 
+    def test_non_finite_json_cue_times_are_rejected(self) -> None:
+        for body in (
+            '[{"start": 1e400, "end": 2.0, "text": "Hi"}]',
+            '[{"start": 0.0, "end": Infinity, "text": "Hi"}]',
+            '[{"start": NaN, "end": 2.0, "text": "Hi"}]',
+        ):
+            with self.subTest(body=body):
+                with tempfile.TemporaryDirectory() as raw:
+                    path = Path(raw) / "lecture.json"
+                    path.write_text(body, encoding="utf-8")
+                    with self.assertRaises(PpsError) as raised:
+                        load_sidecar(path)
+                self.assertIn("finite", str(raised.exception))
+
     def test_missing_sidecar_file_is_a_user_error(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             with self.assertRaises(PpsError):

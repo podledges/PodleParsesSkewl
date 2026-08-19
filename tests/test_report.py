@@ -166,6 +166,34 @@ class ReportTests(unittest.TestCase):
                     LectureDocument.from_json_dict(candidate)
         self.assertEqual(payload["title"], "Sample Lecture")
 
+    def test_write_document_refuses_non_finite_numbers(self) -> None:
+        from podleparsesskewl.errors import PpsError
+
+        document = _document()
+        broken = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=document.stills,
+            transcript=Transcript(
+                cues=(Cue(float("inf"), 2.0, "Hi"),), source=document.transcript.source
+            ),
+            sections=document.sections,
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            with self.assertRaises(PpsError):
+                write_document(broken, folder)
+            self.assertFalse((folder / "lecture.json").exists())
+
+    def test_written_documents_are_strict_json(self) -> None:
+        def reject(_token: str) -> float:
+            raise AssertionError("lecture.json must not carry Infinity/NaN tokens")
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(_document(), folder)
+            json.loads(path.read_text(encoding="utf-8"), parse_constant=reject)
+
     def test_html_head_declares_a_mobile_viewport(self) -> None:
         head = render_html(_document()).split("</head>")[0]
         self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', head)

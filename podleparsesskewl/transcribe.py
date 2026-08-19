@@ -11,7 +11,7 @@ from typing import Iterator
 
 from podleparsesskewl.captions import discover_sidecar, load_sidecar
 from podleparsesskewl.deps import Environment
-from podleparsesskewl.document import Cue, Transcript
+from podleparsesskewl.document import Cue, Transcript, finite_seconds
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.media import extract_audio_wav
 
@@ -131,9 +131,9 @@ def _openai_whisper(wav: Path, module) -> Transcript:
 
 def _seconds(value: object, engine: str) -> float:
     try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as exc:
-        raise PpsError(f"{engine} returned a non-numeric cue time {value!r}") from exc
+        return finite_seconds(value, f"{engine} cue time")
+    except PpsError as exc:
+        raise PpsError(f"{engine} returned an unusable cue time {value!r}: {exc}") from exc
 
 
 def _whisper_cli(wav: Path, binary: str, name: str) -> Transcript:

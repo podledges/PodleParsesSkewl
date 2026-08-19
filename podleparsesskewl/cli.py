@@ -101,7 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parse.add_argument(
         "--keep-work",
         action="store_true",
-        help="keep intermediate ffmpeg files under the output _work directory",
+        help="keep this run's intermediate ffmpeg files in its _work-* folder under the output directory",
     )
 
     render = sub.add_parser("render", help="rebuild plain HTML/Markdown from lecture.json")
@@ -193,11 +193,11 @@ def _cmd_render(args: argparse.Namespace) -> int:
         output.mkdir(parents=True, exist_ok=True)
     relocated = output.resolve() != source_dir.resolve()
     if relocated:
-        missing = copy_still_images(document, source_dir, output)
+        problems = copy_still_images(document, source_dir, output)
         with writing(f"the Lecture Document in {output}"):
             shutil.copyfile(args.document, output / "lecture.json")
-        for reference in missing:
-            print(f"warning: Still image not found, copied nothing for {reference}", file=sys.stderr)
+        for problem in problems:
+            print(f"warning: {problem}", file=sys.stderr)
     html_path, md_path = write_plain_views(document, output)
     print(f"HTML      {html_path}")
     print(f"Markdown  {md_path}")
