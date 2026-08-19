@@ -8,7 +8,7 @@ from unittest import mock
 
 from podleparsesskewl.cli import main
 from podleparsesskewl.config import DEFAULT_LECTURES_DIR, load_config, windows_path_to_wsl
-from podleparsesskewl.deps import _ffprobe_status, inspect_environment
+from podleparsesskewl.deps import _ffprobe_status, format_doctor, inspect_environment
 
 
 def _render_fixture_document():
@@ -119,7 +119,7 @@ class DoctorTests(unittest.TestCase):
             ffmpeg.write_bytes(b"")
             probe = folder / "ffprobe.exe"
             probe.write_bytes(b"")
-            with mock.patch("podleparsesskewl.deps._resolve_binary", return_value=None):
+            with mock.patch("podleparsesskewl.deps._resolve_binary", return_value=(None, "")):
                 with mock.patch(
                     "podleparsesskewl.deps._run_version", return_value="ffprobe version test"
                 ):
@@ -134,13 +134,53 @@ class DoctorTests(unittest.TestCase):
             ffmpeg.write_bytes(b"")
             probe = folder / "ffprobe"
             probe.write_bytes(b"")
-            with mock.patch("podleparsesskewl.deps._resolve_binary", return_value=None):
+            with mock.patch("podleparsesskewl.deps._resolve_binary", return_value=(None, "")):
                 with mock.patch(
                     "podleparsesskewl.deps._run_version", return_value="ffprobe version test"
                 ):
                     status = _ffprobe_status(ffmpeg)
         self.assertTrue(status.found)
         self.assertEqual(status.path, probe)
+
+    def test_unusable_ffmpeg_override_names_the_variable(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            missing = str(Path(raw) / "nowhere" / "ffmpeg")
+            with mock.patch.dict(
+                os.environ, {"PODLEPARSESSKEWL_FFMPEG": missing}, clear=False
+            ):
+                os.environ.pop("PODLEPARSESSKEWL_FFPROBE", None)
+                with mock.patch(
+                    "podleparsesskewl.deps.shutil.which", return_value="/usr/bin/ffmpeg"
+                ):
+                    env = inspect_environment()
+        self.assertFalse(env.ffmpeg.found)
+        self.assertIn("PODLEPARSESSKEWL_FFMPEG", env.ffmpeg.detail)
+        self.assertIn(missing, env.ffmpeg.detail)
+        self.assertIn("PODLEPARSESSKEWL_FFMPEG", format_doctor(env))
+
+    def test_windows_ffmpeg_override_is_translated_under_wsl(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            binary = Path(raw) / "ffmpeg.exe"
+            binary.write_bytes(b"")
+            with mock.patch.dict(
+                os.environ,
+                {"PODLEPARSESSKEWL_FFMPEG": r"C:\ffmpeg\bin\ffmpeg.exe"},
+                clear=False,
+            ):
+                os.environ.pop("PODLEPARSESSKEWL_FFPROBE", None)
+                with mock.patch("podleparsesskewl.deps.running_under_wsl", return_value=True):
+                    with mock.patch(
+                        "podleparsesskewl.deps.windows_path_to_wsl", return_value=str(binary)
+                    ):
+                        with mock.patch(
+                            "podleparsesskewl.deps._run_version", return_value="ffmpeg version test"
+                        ):
+                            with mock.patch(
+                                "podleparsesskewl.deps.shutil.which", return_value=None
+                            ):
+                                env = inspect_environment()
+        self.assertTrue(env.ffmpeg.found)
+        self.assertEqual(env.ffmpeg.path, binary)
 
     def test_parse_without_recording_explains_usage(self) -> None:
         code = main(["parse"])

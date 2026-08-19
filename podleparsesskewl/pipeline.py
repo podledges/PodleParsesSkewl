@@ -72,6 +72,7 @@ def parse_recording(
         environment,
         sidecar=options.sidecar,
         work_dir=work_dir,
+        has_audio=probe.has_audio,
     )
     frames = sample_signatures(
         recording,

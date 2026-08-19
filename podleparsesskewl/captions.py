@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from podleparsesskewl.document import Cue, Transcript
+from podleparsesskewl.document import SCHEMA_V1, Cue, Transcript
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.timefmt import parse_clock
 
@@ -14,15 +14,27 @@ SIDECAR_SUFFIXES = (".srt", ".vtt", ".webvtt", ".json")
 _ARROW = re.compile(r"\s+-->\s+")
 _VTT_TAG = re.compile(r"</?[^>]+>")
 _NOTE_OR_STYLE = re.compile(r"^(NOTE|STYLE|REGION)\b")
+_DOCUMENT_NOT_SIDECAR = (
+    "this is a PodleParsesSkewl Lecture Document, not a caption sidecar. "
+    "Use `pps render` to rebuild its views, or point --transcript at a "
+    ".srt/.vtt/.json caption file"
+)
 
 
 def discover_sidecar(recording: Path) -> Path | None:
-    """Return the first sidecar next to a Recording, if one exists."""
+    """Return the first caption sidecar next to a Recording, if one exists.
+
+    A `lecture.json` Lecture Document sits at the same path a JSON sidecar
+    would, so it is skipped rather than mistaken for its own input.
+    """
     stem = recording.with_suffix("")
     for suffix in SIDECAR_SUFFIXES:
         candidate = Path(str(stem) + suffix)
-        if candidate.is_file():
-            return candidate
+        if not candidate.is_file():
+            continue
+        if suffix == ".json" and _looks_like_document(candidate):
+            continue
+        return candidate
     return None
 
 
@@ -46,7 +58,26 @@ def load_sidecar(path: Path) -> Transcript:
         raise PpsError(f"{path}: {exc}") from exc
     except (TypeError, ValueError) as exc:
         raise PpsError(f"could not parse transcript sidecar {path}: {exc}") from exc
+    if not cues:
+        raise PpsError(
+            f"transcript sidecar {path} yielded no cues. Check that it is a caption "
+            "file with timed text, not an empty or differently shaped document."
+        )
     return Transcript(cues=tuple(cues), source=source)
+
+
+def _looks_like_document(path: Path) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and _is_document_payload(payload)
+
+
+def _is_document_payload(payload: dict) -> bool:
+    if payload.get("schema") == SCHEMA_V1:
+        return True
+    return "stills" in payload and "sections" in payload and "transcript" in payload
 
 
 def _read_sidecar_text(path: Path) -> str:
@@ -111,7 +142,18 @@ def parse_json_transcript(text: str) -> list[Cue]:
         raise PpsError(f"invalid JSON transcript: {exc}") from exc
     raw_cues = payload
     if isinstance(payload, dict):
-        raw_cues = payload.get("cues", payload.get("segments", []))
+        if _is_document_payload(payload):
+            raise PpsError(_DOCUMENT_NOT_SIDECAR)
+        for key in ("cues", "segments"):
+            if key in payload:
+                raw_cues = payload[key]
+                break
+        else:
+            keys = ", ".join(sorted(str(key) for key in payload)) or "none"
+            raise PpsError(
+                "JSON transcript object must hold a 'cues' or 'segments' list "
+                f"(top-level keys: {keys})"
+            )
     if not isinstance(raw_cues, list):
         raise PpsError("JSON transcript must be a list of cues or {cues: [...]}")
     cues: list[Cue] = []

@@ -8,6 +8,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from podleparsesskewl.config import running_under_wsl, windows_path_to_wsl
+
 ENV_FFMPEG = "PODLEPARSESSKEWL_FFMPEG"
 ENV_FFPROBE = "PODLEPARSESSKEWL_FFPROBE"
 
@@ -65,31 +67,32 @@ def format_doctor(env: Environment) -> str:
 
 
 def _ffmpeg_status() -> ToolStatus:
-    path = _resolve_binary("ffmpeg", ENV_FFMPEG)
+    path, problem = _resolve_binary("ffmpeg", ENV_FFMPEG)
     if path is None:
         return ToolStatus(
             name="ffmpeg",
             found=False,
             path=None,
-            detail="required to read MP4 recordings and extract Stills",
+            detail=problem or "required to read MP4 recordings and extract Stills",
         )
     version = _run_version([str(path), "-version"])
     return ToolStatus(name="ffmpeg", found=True, path=path, detail=version)
 
 
 def _ffprobe_status(ffmpeg_path: Path | None) -> ToolStatus:
-    path = _resolve_binary("ffprobe", ENV_FFPROBE)
+    path, problem = _resolve_binary("ffprobe", ENV_FFPROBE)
     if path is None and ffmpeg_path is not None:
         for sibling in _ffprobe_siblings(ffmpeg_path):
             if sibling.is_file():
                 path = sibling
+                problem = ""
                 break
     if path is None:
         return ToolStatus(
             name="ffprobe",
             found=False,
             path=None,
-            detail="usually installed with ffmpeg; used to read duration and size",
+            detail=problem or "usually installed with ffmpeg; used to read duration and size",
         )
     version = _run_version([str(path), "-version"])
     return ToolStatus(name="ffprobe", found=True, path=path, detail=version)
@@ -146,13 +149,28 @@ def _transcriber_status() -> ToolStatus:
     )
 
 
-def _resolve_binary(name: str, env_key: str) -> Path | None:
+def _resolve_binary(name: str, env_key: str) -> tuple[Path | None, str]:
+    """Resolve a tool path; an override that cannot be used explains itself."""
     override = os.environ.get(env_key)
     if override:
-        path = Path(override)
-        return path if path.is_file() else None
+        for candidate in _override_candidates(override):
+            if candidate.is_file():
+                return candidate, ""
+        return None, (
+            f"${env_key} is set but is not a file: {override}. "
+            f"Point it at the {name} binary, or unset it to use PATH."
+        )
     found = shutil.which(name)
-    return Path(found) if found else None
+    return (Path(found) if found else None), ""
+
+
+def _override_candidates(override: str) -> list[Path]:
+    candidates = [Path(override)]
+    if running_under_wsl():
+        translated = windows_path_to_wsl(override)
+        if translated is not None:
+            candidates.append(Path(translated))
+    return candidates
 
 
 def _run_version(command: list[str]) -> str:

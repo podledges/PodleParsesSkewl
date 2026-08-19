@@ -10,6 +10,28 @@ from podleparsesskewl.errors import PpsError
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def _document_json() -> str:
+    import json
+
+    from podleparsesskewl.document import (
+        Cue,
+        LectureDocument,
+        Section,
+        SourceInfo,
+        Still,
+        Transcript,
+    )
+
+    document = LectureDocument(
+        title="Lecture",
+        source=SourceInfo("lecture.mp4", 4.0, "sidecar:srt:lecture.srt"),
+        stills=(Still("still-001", 1, 0.0, 4.0, "stills/still-001.png"),),
+        transcript=Transcript((Cue(1.0, 2.0, "Said here."),), "sidecar:srt:lecture.srt"),
+        sections=(Section("still-001", "Said here.", (0,)),),
+    )
+    return json.dumps(document.to_json_dict(), indent=2)
+
+
 class CaptionTests(unittest.TestCase):
     def test_parse_srt_fixture(self) -> None:
         cues = parse_srt((FIXTURES / "sample.srt").read_text(encoding="utf-8"))
@@ -84,6 +106,50 @@ class CaptionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             with self.assertRaises(PpsError):
                 load_sidecar(Path(raw) / "absent.srt")
+
+    def test_unrecognized_json_shape_is_rejected_not_silently_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text('{"transcription": [{"t": 1}]}', encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        message = str(raised.exception)
+        self.assertIn("cues", message)
+        self.assertIn("segments", message)
+
+    def test_json_sidecar_without_any_cue_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text('{"cues": []}', encoding="utf-8")
+            with self.assertRaises(PpsError):
+                load_sidecar(path)
+
+    def test_lecture_document_is_not_accepted_as_a_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text(_document_json(), encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("Lecture Document", str(raised.exception))
+
+    def test_discover_sidecar_skips_a_lecture_document(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            (folder / "lecture.json").write_text(_document_json(), encoding="utf-8")
+            self.assertIsNone(discover_sidecar(recording))
+
+    def test_discover_sidecar_still_finds_a_real_json_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            sidecar = folder / "lecture.json"
+            sidecar.write_text(
+                (FIXTURES / "sample.json").read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            self.assertEqual(discover_sidecar(recording), sidecar)
 
     def test_srt_without_index_numbers(self) -> None:
         text = "00:00:01,000 --> 00:00:02,000\nHello\n"

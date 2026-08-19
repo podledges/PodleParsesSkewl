@@ -95,6 +95,10 @@ End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain 
 
 The program looks next to the MP4 for `lecture.srt`, `lecture.vtt`, or `lecture.json`. If one is present, it is used and audio is not transcribed. If none is present, a local engine is required.
 
+A JSON sidecar must be a list of cues, or an object holding a `cues` or `segments` list, where each cue has `start`/`end` (seconds or `HH:MM:SS.mmm`) and `text`. A sidecar that yields no cues is an error rather than an empty transcript.
+
+A `lecture.json` Lecture Document sits at exactly the path a JSON sidecar would, so the program recognizes its own canonical output and never feeds it back in as a transcript. If a Recording has no audio track and no sidecar, `parse` says so instead of asking ffmpeg for audio that is not there.
+
 ### v1 recording layouts
 
 In scope: clean full-frame slides, and screen-share-dominant recordings. A small webcam bubble may be ignored. Messy classroom / Zoom mosaics are out of scope.
@@ -146,13 +150,13 @@ Setting the WSL path directly still works:
 export PODLEPARSESSKEWL_LECTURES_DIR=/mnt/c/Users/ayden/Videos/Lectures
 ```
 
-You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those binaries are not on `PATH`.
+You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those binaries are not on `PATH`. Under WSL these accept a Windows path too (`C:\ffmpeg\bin\ffmpeg.exe` is tried as `/mnt/c/ffmpeg/bin/ffmpeg.exe`). If an override does not point at a file, `doctor` names the variable rather than reporting the tool as generically missing.
 
 ## Aesthetic HTML
 
 `/ezLectures` is an agent skill. It reads `lecture.json` and writes a dressed HTML view. It does not re-extract Stills or re-transcribe audio.
 
-The canonical skill file is `.agents/skills/ezLectures/SKILL.md` - edit that one. `.claude/skills/ezLectures/SKILL.md` exists so Claude Code can discover `/ezLectures` and points back at the canonical file; `.grok/skills/ezLectures/SKILL.md` mirrors it for Grok.
+The canonical skill file is `.agents/skills/ezLectures/SKILL.md` - edit that one. `.claude/skills/ezLectures/SKILL.md` and `.grok/skills/ezLectures/SKILL.md` exist only so Claude Code and Grok can discover `/ezLectures`; both point back at the canonical file instead of copying it.
 
 ## Tests
 

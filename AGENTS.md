@@ -16,7 +16,7 @@ python3 -m unittest discover -s tests -v
 
 `/ezLectures` renders an aesthetic HTML view from an existing `lecture.json`.
 The one canonical definition is `.agents/skills/ezLectures/SKILL.md`; edit only that file.
-`.claude/skills/ezLectures/SKILL.md` is a discovery pointer back to it, and `.grok/skills/ezLectures/SKILL.md` is a harness mirror.
+Every harness entry (`.claude/skills/<skill>/SKILL.md`, `.grok/skills/<skill>/SKILL.md`) is a discovery pointer back to the `.agents` file, never a copy of it.
 
 ## Constraints
 

@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 from unittest.mock import Mock
 
 from podleparsesskewl.errors import PpsError
-from podleparsesskewl.transcribe import load_transcript
+from podleparsesskewl.transcribe import load_transcript, transcribe_wav
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _faster_whisper_module(model) -> types.ModuleType:
+    module = types.ModuleType("faster_whisper")
+    module.WhisperModel = Mock(return_value=model)
+    return module
 
 
 class TranscribeTests(unittest.TestCase):
@@ -36,6 +45,57 @@ class TranscribeTests(unittest.TestCase):
         message = str(raised.exception).lower()
         self.assertIn("sidecar", message)
         self.assertIn("faster-whisper", message)
+
+    def test_recording_without_audio_and_without_sidecar_says_so(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = True
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            with self.assertRaises(PpsError) as raised:
+                load_transcript(recording, env, work_dir=folder, has_audio=False)
+        message = str(raised.exception).lower()
+        self.assertIn("no audio track", message)
+        self.assertIn("sidecar", message)
+
+    def test_a_failing_audio_engine_is_a_user_error(self) -> None:
+        module = types.ModuleType("faster_whisper")
+        module.WhisperModel = Mock(side_effect=RuntimeError("could not download model"))
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        message = str(raised.exception)
+        self.assertIn("faster-whisper", message)
+        self.assertIn("could not download model", message)
+
+    def test_a_non_numeric_engine_cue_time_is_a_user_error(self) -> None:
+        segment = types.SimpleNamespace(start="soon", end=2.0, text="Hello")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        self.assertIn("'soon'", str(raised.exception))
+
+    def test_engine_cues_become_a_transcript(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text=" Hello class. ")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                transcript = transcribe_wav(wav, Mock())
+        self.assertEqual(transcript.source, "audio:faster-whisper:base")
+        self.assertEqual(transcript.cues[0].text, "Hello class.")
+        self.assertEqual(transcript.cues[0].start_seconds, 1.0)
 
     def test_explicit_sidecar_path(self) -> None:
         env = Mock()
