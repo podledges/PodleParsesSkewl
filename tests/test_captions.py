@@ -116,9 +116,29 @@ class CaptionTests(unittest.TestCase):
                         load_sidecar(path)
                 self.assertIn("finite", str(raised.exception))
 
+    def test_a_null_text_cue_is_skipped_like_an_absent_one(self) -> None:
+        body = (
+            '[{"start": 1, "end": 2, "text": "Only this was said."},'
+            ' {"start": 3, "end": 4, "text": null},'
+            ' {"start": 5, "end": 6},'
+            ' {"start": 7, "end": 8, "text": "  "}]'
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text(body, encoding="utf-8")
+            transcript = load_sidecar(path)
+        self.assertEqual([cue.text for cue in transcript.cues], ["Only this was said."])
+
+    def test_a_sidecar_of_only_null_text_cues_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text('[{"start": 1, "end": 2, "text": null}]', encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("empty or invalid", str(raised.exception).lower())
+
     def test_non_string_cue_text_is_never_turned_into_said(self) -> None:
         for body in (
-            '[{"start": 1, "end": 2, "text": null}]',
             '[{"start": 1, "end": 2, "text": 123}]',
             '[{"start": 1, "end": 2, "text": {"a": 1}}]',
             '[{"start": 1, "end": 2, "text": ["a"]}]',

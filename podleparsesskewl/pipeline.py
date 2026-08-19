@@ -172,6 +172,9 @@ def copy_still_images(
     for still in document.stills:
         reference = still.image
         if not reference:
+            problems.append(
+                f"{still.id} has no image reference, so the copied view will show a broken image"
+            )
             continue
         relative = PurePosixPath(reference)
         windows = PureWindowsPath(reference)

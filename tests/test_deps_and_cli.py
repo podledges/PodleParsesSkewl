@@ -370,6 +370,58 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("warning:", stderr.getvalue())
             self.assertNotIn("Said here.", (folder / "lecture.html").read_text(encoding="utf-8"))
 
+    def test_render_keeps_said_when_two_sections_share_a_still(self) -> None:
+        import contextlib
+        import io
+
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(document, folder)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["sections"] = [
+                {"still_id": "still-001", "said": "AAA", "cue_indexes": [0]},
+                {"still_id": "still-001", "said": "BBB", "cue_indexes": []},
+            ]
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main(["render", str(path)])
+
+            self.assertEqual(code, 0)
+            html = (folder / "lecture.html").read_text(encoding="utf-8")
+            self.assertIn("AAA", html)
+            self.assertIn("BBB", html)
+            self.assertIn("warning:", stderr.getvalue())
+            self.assertIn("still-001", stderr.getvalue())
+
+    def test_render_warns_about_an_empty_still_image_reference(self) -> None:
+        import contextlib
+        import io
+
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            path = write_document(document, source)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["stills"][0]["image"] = ""
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main(["render", str(path), "-o", str(folder / "elsewhere")])
+
+            self.assertEqual(code, 0)
+            self.assertIn("warning:", stderr.getvalue())
+            self.assertIn("still-001", stderr.getvalue())
+
     def test_render_rejects_a_structurally_invalid_document(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "lecture.json"

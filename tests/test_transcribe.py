@@ -96,6 +96,20 @@ class TranscribeTests(unittest.TestCase):
                     transcribe_wav(wav, Mock())
         self.assertIn("must be text", str(raised.exception))
 
+    def test_a_none_text_segment_does_not_abort_the_transcription(self) -> None:
+        segments = [
+            types.SimpleNamespace(start=1.0, end=2.0, text="Hello class."),
+            types.SimpleNamespace(start=3.0, end=4.0, text=None),
+        ]
+        model = Mock()
+        model.transcribe.return_value = (segments, None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                transcript = transcribe_wav(wav, Mock())
+        self.assertEqual([cue.text for cue in transcript.cues], ["Hello class."])
+
     def test_engine_cues_become_a_transcript(self) -> None:
         segment = types.SimpleNamespace(start=1.0, end=2.0, text=" Hello class. ")
         model = Mock()

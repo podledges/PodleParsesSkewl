@@ -195,10 +195,10 @@ class ReportTests(unittest.TestCase):
             json.loads(path.read_text(encoding="utf-8"), parse_constant=reject)
 
     def test_orphaned_section_ids_are_reported(self) -> None:
-        from podleparsesskewl.report import orphaned_section_ids
+        from podleparsesskewl.report import section_problems
 
         document = _document()
-        self.assertEqual(orphaned_section_ids(document), [])
+        self.assertEqual(section_problems(document), [])
         mistyped = LectureDocument(
             title=document.title,
             source=document.source,
@@ -209,8 +209,35 @@ class ReportTests(unittest.TestCase):
                 document.sections[1],
             ),
         )
-        self.assertEqual(orphaned_section_ids(mistyped), ["still-01"])
+        problems = section_problems(mistyped)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("still-01", problems[0])
         self.assertNotIn("Hello class.", render_html(mistyped))
+
+    def test_duplicate_section_ids_keep_every_said_and_are_reported(self) -> None:
+        from podleparsesskewl.report import section_problems
+
+        document = _document()
+        split = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=document.stills,
+            transcript=document.transcript,
+            sections=(
+                Section("still-001", "AAA", (0,)),
+                Section("still-001", "BBB", ()),
+                document.sections[1],
+            ),
+        )
+        html = render_html(split)
+        markdown = render_markdown(split)
+        for view in (html, markdown):
+            self.assertIn("AAA", view)
+            self.assertIn("BBB", view)
+            self.assertLess(view.index("AAA"), view.index("BBB"))
+        problems = section_problems(split)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("still-001", problems[0])
 
     def test_html_head_declares_a_mobile_viewport(self) -> None:
         head = render_html(_document()).split("</head>")[0]

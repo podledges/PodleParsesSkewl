@@ -87,19 +87,40 @@ def write_plain_views(document: LectureDocument, output_dir: Path) -> tuple[Path
     return html_path, md_path
 
 
-def orphaned_section_ids(document: LectureDocument) -> list[str]:
-    """Section still_ids that match no Still, so their Said reaches no view."""
+def section_problems(document: LectureDocument) -> list[str]:
+    """Report Section links whose Said would otherwise vanish without a word."""
     known = {still.id for still in document.stills}
-    seen: list[str] = []
+    counts: dict[str, int] = {}
+    problems: list[str] = []
     for section in document.sections:
-        if section.still_id not in known and section.still_id not in seen:
-            seen.append(section.still_id)
-    return seen
+        counts[section.still_id] = counts.get(section.still_id, 0) + 1
+        if section.still_id not in known and counts[section.still_id] == 1:
+            problems.append(
+                f"section still_id {section.still_id!r} matches no Still, so its Said is "
+                "left out of the rendered views"
+            )
+        elif section.still_id in known and counts[section.still_id] == 2:
+            problems.append(
+                f"still_id {section.still_id!r} is claimed by more than one section; "
+                "their Said is joined in document order"
+            )
+    return problems
 
 
 def _said_by_still(document: LectureDocument) -> dict[str, str]:
-    """Honour the declared Section.still_id link rather than list position."""
-    return {section.still_id: section.said for section in document.sections}
+    """Honour the declared Section.still_id link rather than list position.
+
+    Sections that share a still_id are joined in document order so no Said is
+    dropped; `section_problems` reports the duplication.
+    """
+    said: dict[str, str] = {}
+    for section in document.sections:
+        existing = said.get(section.still_id)
+        if existing:
+            said[section.still_id] = f"{existing} {section.said}".strip()
+        else:
+            said[section.still_id] = section.said
+    return said
 
 
 def _when(still: Still) -> str:

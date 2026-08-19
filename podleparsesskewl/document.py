@@ -166,7 +166,13 @@ def _as_text(value: Any, field: str) -> str:
 
 
 def cue_text(value: Any, label: str) -> str:
-    """Return spoken text as-is; never coerce a non-string into invented Said."""
+    """Return spoken text as-is; never coerce a non-string into invented Said.
+
+    A null reads as "this cue carries no speech", the same as an absent or
+    empty field, and the caller drops it. Any other non-string is rejected.
+    """
+    if value is None:
+        return ""
     if not isinstance(value, str):
         raise PpsError(
             f"{label} must be text, got {_kind(value)}. Speech is never invented, "

@@ -97,7 +97,7 @@ def _faster_whisper(wav: Path, module) -> Transcript:
         model = module.WhisperModel(model_name, device="cpu", compute_type="int8")
         segments, _info = model.transcribe(str(wav), vad_filter=True)
         for position, segment in enumerate(segments):
-            text = cue_text(segment.text if segment.text is not None else "", f"{name} segment {position} text")
+            text = cue_text(segment.text, f"{name} segment {position} text")
             if text:
                 cues.append(
                     Cue(
