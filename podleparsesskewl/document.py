@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
 from podleparsesskewl.errors import PpsError
 
 SCHEMA_V1 = "podleparsesskewl.lecture/v1"
+_COUNT_LIMIT = 10**12
 
 
 @dataclass(frozen=True)
@@ -153,7 +155,7 @@ class LectureDocument:
             raise PpsError(
                 f"Lecture Document is missing the required field {exc.args[0]!r}"
             ) from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, ArithmeticError) as exc:
             raise PpsError(f"Lecture Document has an invalid field: {exc}") from exc
 
 
@@ -169,11 +171,16 @@ def _as_seconds(value: Any, field: str) -> float:
             f"Lecture Document field {field} must be a number of seconds, got {_kind(value)}"
         )
     try:
-        return float(value)
-    except ValueError as exc:
+        number = float(value)
+    except (ValueError, OverflowError) as exc:
         raise PpsError(
             f"Lecture Document field {field} is not a number of seconds: {value!r}"
         ) from exc
+    if not math.isfinite(number):
+        raise PpsError(
+            f"Lecture Document field {field} must be a finite number of seconds, got {value!r}"
+        )
+    return number
 
 
 def _as_count(value: Any, field: str) -> int:
@@ -183,10 +190,14 @@ def _as_count(value: Any, field: str) -> int:
         )
     try:
         number = int(value)
-    except ValueError as exc:
+    except (ValueError, OverflowError) as exc:
         raise PpsError(
             f"Lecture Document field {field} is not a whole number: {value!r}"
         ) from exc
+    if abs(number) > _COUNT_LIMIT:
+        raise PpsError(
+            f"Lecture Document field {field} is out of range: {value!r}"
+        )
     return number
 
 

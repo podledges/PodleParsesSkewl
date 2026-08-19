@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,9 +78,9 @@ def _optional_seconds(value: object) -> float | None:
         return None
     try:
         seconds = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    if seconds != seconds or seconds < 0:  # NaN or negative
+    if not math.isfinite(seconds) or seconds < 0:
         return None
     return seconds
 

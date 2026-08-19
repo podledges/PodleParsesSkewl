@@ -302,6 +302,51 @@ class DoctorTests(unittest.TestCase):
             code = main(["render", str(path)])
         self.assertEqual(code, 2)
 
+    def test_render_rejects_non_finite_document_numbers(self) -> None:
+        cases = {
+            "literal Infinity": ("stills", "start_seconds", float("inf")),
+            "overflowing string": ("stills", "start_seconds", "1e400"),
+            "infinite index": ("stills", "index", float("inf")),
+            "infinite duration": ("source", "duration_seconds", float("-inf")),
+        }
+        for label, (section, field, value) in cases.items():
+            with self.subTest(case=label):
+                payload = _render_fixture_document().to_json_dict()
+                if section == "stills":
+                    payload["stills"][0][field] = value
+                else:
+                    payload["source"][field] = value
+                with tempfile.TemporaryDirectory() as raw:
+                    path = Path(raw) / "lecture.json"
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                    code = main(["render", str(path)])
+                self.assertEqual(code, 2)
+
+    def test_render_to_another_folder_preserves_unknown_document_fields(self) -> None:
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            image = source / "stills" / "still-001.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"\x89PNG")
+            path = write_document(document, source)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["notes"] = "hand added"
+            payload["stills"][0]["caption"] = "annotated by an agent"
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            target = folder / "elsewhere"
+
+            code = main(["render", str(path), "-o", str(target)])
+
+            self.assertEqual(code, 0)
+            copied = json.loads((target / "lecture.json").read_text(encoding="utf-8"))
+            self.assertEqual(copied["notes"], "hand added")
+            self.assertEqual(copied["stills"][0]["caption"], "annotated by an agent")
+
     def test_render_rejects_a_structurally_invalid_document(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "lecture.json"

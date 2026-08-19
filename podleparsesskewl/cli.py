@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -22,7 +23,6 @@ from podleparsesskewl.pipeline import (
     default_output_dir,
     load_document,
     parse_recording,
-    write_document,
 )
 from podleparsesskewl.report import write_plain_views
 from podleparsesskewl.stills import DEFAULT_CHANGE_RATIO, DEFAULT_MIN_HOLD_SECONDS, DEFAULT_SAMPLE_FPS
@@ -194,7 +194,8 @@ def _cmd_render(args: argparse.Namespace) -> int:
     relocated = output.resolve() != source_dir.resolve()
     if relocated:
         missing = copy_still_images(document, source_dir, output)
-        write_document(document, output)
+        with writing(f"the Lecture Document in {output}"):
+            shutil.copyfile(args.document, output / "lecture.json")
         for reference in missing:
             print(f"warning: Still image not found, copied nothing for {reference}", file=sys.stderr)
     html_path, md_path = write_plain_views(document, output)

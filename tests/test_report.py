@@ -146,6 +146,30 @@ class ReportTests(unittest.TestCase):
                     LectureDocument.from_json_dict(candidate)
                 self.assertIn(field.split(".")[0], str(raised.exception))
 
+    def test_non_finite_numbers_are_user_errors(self) -> None:
+        from podleparsesskewl.errors import PpsError
+
+        payload = _document().to_json_dict()
+        broken = {
+            "stills.0.start_seconds": "1e400",
+            "stills.0.end_seconds": "inf",
+            "source.duration_seconds": float("inf"),
+            "transcript.cues.0.start_seconds": float("nan"),
+            "stills.0.index": float("inf"),
+            "source.width": 10**400,
+        }
+        for field, value in broken.items():
+            with self.subTest(field=field):
+                candidate = json.loads(json.dumps(_document().to_json_dict()))
+                _assign(candidate, field, value)
+                with self.assertRaises(PpsError):
+                    LectureDocument.from_json_dict(candidate)
+        self.assertEqual(payload["title"], "Sample Lecture")
+
+    def test_html_head_declares_a_mobile_viewport(self) -> None:
+        head = render_html(_document()).split("</head>")[0]
+        self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', head)
+
     def test_numeric_strings_are_accepted_for_times(self) -> None:
         payload = _document().to_json_dict()
         payload["stills"][0]["start_seconds"] = "0"

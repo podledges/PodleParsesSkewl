@@ -28,17 +28,3 @@ def format_clock(seconds: float) -> str:
     hours, rem = divmod(total, 3600)
     minutes, secs = divmod(rem, 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
-def format_clock_ms(seconds: float) -> str:
-    """Format seconds as `HH:MM:SS.mmm`."""
-    if seconds < 0:
-        seconds = 0.0
-    whole = int(seconds)
-    millis = int(round((seconds - whole) * 1000))
-    if millis == 1000:
-        whole += 1
-        millis = 0
-    hours, rem = divmod(whole, 3600)
-    minutes, secs = divmod(rem, 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
