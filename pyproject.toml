@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "podleparsesskewl"
+version = "0.1.0"
+description = "Review reconstruction: pair lecture speech with extracted Stills"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "podledges" }]
+dependencies = []
+
+[project.optional-dependencies]
+transcribe = [
+    "faster-whisper>=1.0",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+pps = "podleparsesskewl.cli:main"
+podleparsesskewl = "podleparsesskewl.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/podledges/PodleParsesSkewl"
+
+[tool.setuptools.packages.find]
+include = ["podleparsesskewl*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

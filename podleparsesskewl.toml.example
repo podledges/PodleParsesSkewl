@@ -1,0 +1,8 @@
+# Copy to podleparsesskewl.toml in the working directory, or to
+# ~/.config/podleparsesskewl/podleparsesskewl.toml
+#
+# Default on the captain's Windows machine:
+lectures_dir = "C:\\Users\\ayden\\Videos\\Lectures"
+
+# WSL example:
+# lectures_dir = "/mnt/c/Users/ayden/Videos/Lectures"
