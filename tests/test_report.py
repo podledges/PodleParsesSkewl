@@ -73,6 +73,44 @@ class ReportTests(unittest.TestCase):
         self.assertIn("---", markdown)
         self.assertIn("Hello class.", markdown)
 
+    def test_said_follows_still_id_not_section_order(self) -> None:
+        document = _document()
+        reordered = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=document.stills,
+            transcript=document.transcript,
+            sections=(document.sections[1], document.sections[0]),
+        )
+        html = render_html(reordered)
+        markdown = render_markdown(reordered)
+        for view in (html, markdown):
+            self.assertLess(view.index("Hello class."), view.index("Look at this graph."))
+
+    def test_a_dropped_section_leaves_its_still_empty_instead_of_shifting(self) -> None:
+        document = _document()
+        trimmed = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=document.stills,
+            transcript=document.transcript,
+            sections=(document.sections[1],),
+        )
+        html = render_html(trimmed)
+        first_still = html.index("stills/still-001.png")
+        second_still = html.index("stills/still-002.png")
+        said = html.index("Look at this graph.")
+        self.assertGreater(said, second_still)
+        self.assertNotIn("Hello class.", html)
+        self.assertLess(first_still, second_still)
+
+    def test_invalid_document_payload_is_a_user_error(self) -> None:
+        from podleparsesskewl.errors import PpsError
+
+        with self.assertRaises(PpsError) as raised:
+            LectureDocument.from_json_dict({"title": "x"})
+        self.assertIn("source", str(raised.exception))
+
     def test_document_round_trip_json(self) -> None:
         document = _document()
         with tempfile.TemporaryDirectory() as raw:

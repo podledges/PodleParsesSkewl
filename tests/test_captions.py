@@ -47,6 +47,44 @@ class CaptionTests(unittest.TestCase):
             with self.assertRaises(PpsError):
                 load_sidecar(path)
 
+    def test_loose_srt_timestamps_are_a_user_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.srt"
+            path.write_text("1\n0:0:1 --> 0:0:2\nHello\n", encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("0:0:1", str(raised.exception))
+
+    def test_non_utf8_sidecar_is_a_user_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.srt"
+            path.write_bytes("1\n00:00:01,000 --> 00:00:02,000\nCaf\xe9\n".encode("cp1252"))
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("UTF-8", str(raised.exception))
+
+    def test_malformed_json_sidecar_is_a_user_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text("{not json", encoding="utf-8")
+            with self.assertRaises(PpsError):
+                load_sidecar(path)
+
+    def test_non_numeric_json_cue_time_is_a_user_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text(
+                '[{"start": "soon", "end": 2.0, "text": "Hello"}]', encoding="utf-8"
+            )
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("start", str(raised.exception))
+
+    def test_missing_sidecar_file_is_a_user_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            with self.assertRaises(PpsError):
+                load_sidecar(Path(raw) / "absent.srt")
+
     def test_srt_without_index_numbers(self) -> None:
         text = "00:00:01,000 --> 00:00:02,000\nHello\n"
         cues = parse_srt(text)

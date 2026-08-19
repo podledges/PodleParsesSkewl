@@ -29,19 +29,36 @@ def discover_sidecar(recording: Path) -> Path | None:
 def load_sidecar(path: Path) -> Transcript:
     """Load a Transcript from an SRT, VTT, or JSON sidecar."""
     suffix = path.suffix.lower()
-    text = path.read_text(encoding="utf-8-sig")
-    if suffix == ".srt":
-        cues = parse_srt(text)
-        source = f"sidecar:srt:{path.name}"
-    elif suffix in {".vtt", ".webvtt"}:
-        cues = parse_vtt(text)
-        source = f"sidecar:vtt:{path.name}"
-    elif suffix == ".json":
-        cues = parse_json_transcript(text)
-        source = f"sidecar:json:{path.name}"
-    else:
+    if suffix not in SIDECAR_SUFFIXES:
         raise PpsError(f"unsupported transcript sidecar: {path}")
+    text = _read_sidecar_text(path)
+    try:
+        if suffix == ".srt":
+            cues = parse_srt(text)
+            source = f"sidecar:srt:{path.name}"
+        elif suffix == ".json":
+            cues = parse_json_transcript(text)
+            source = f"sidecar:json:{path.name}"
+        else:
+            cues = parse_vtt(text)
+            source = f"sidecar:vtt:{path.name}"
+    except PpsError as exc:
+        raise PpsError(f"{path}: {exc}") from exc
+    except (TypeError, ValueError) as exc:
+        raise PpsError(f"could not parse transcript sidecar {path}: {exc}") from exc
     return Transcript(cues=tuple(cues), source=source)
+
+
+def _read_sidecar_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise PpsError(
+            f"transcript sidecar {path} is not UTF-8 text ({exc.reason} at byte {exc.start}). "
+            "Re-save it as UTF-8 and retry."
+        ) from exc
+    except OSError as exc:
+        raise PpsError(f"could not read transcript sidecar {path}: {exc}") from exc
 
 
 def parse_srt(text: str) -> list[Cue]:
@@ -88,7 +105,10 @@ def parse_vtt(text: str) -> list[Cue]:
 
 
 def parse_json_transcript(text: str) -> list[Cue]:
-    payload = json.loads(text)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PpsError(f"invalid JSON transcript: {exc}") from exc
     raw_cues = payload
     if isinstance(payload, dict):
         raw_cues = payload.get("cues", payload.get("segments", []))
@@ -110,9 +130,12 @@ def _json_seconds(item: dict, *keys: str) -> float:
     for key in keys:
         if key in item:
             value = item[key]
-            if isinstance(value, str):
-                return parse_clock(value)
-            return float(value)
+            try:
+                if isinstance(value, str):
+                    return parse_clock(value)
+                return float(value)
+            except (TypeError, ValueError) as exc:
+                raise PpsError(f"JSON cue has an invalid {key} value {value!r}") from exc
     raise PpsError(f"JSON cue missing time field ({' / '.join(keys)})")
 
 
@@ -121,7 +144,10 @@ def _parse_range(line: str) -> tuple[float, float]:
     parts = _ARROW.split(timing)
     if len(parts) != 2:
         raise PpsError(f"invalid cue timing line: {line!r}")
-    return parse_clock(parts[0].strip()), parse_clock(parts[1].strip())
+    try:
+        return parse_clock(parts[0].strip()), parse_clock(parts[1].strip())
+    except ValueError as exc:
+        raise PpsError(f"invalid cue timing line: {line!r} ({exc})") from exc
 
 
 def _join_cue_lines(lines: list[str]) -> str:

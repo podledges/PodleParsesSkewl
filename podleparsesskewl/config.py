@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import platform
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +14,7 @@ from podleparsesskewl.errors import PpsError
 DEFAULT_LECTURES_DIR = r"C:\Users\ayden\Videos\Lectures"
 ENV_LECTURES_DIR = "PODLEPARSESSKEWL_LECTURES_DIR"
 CONFIG_NAME = "podleparsesskewl.toml"
+_WINDOWS_DRIVE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
 
 
 @dataclass(frozen=True)
@@ -25,23 +28,63 @@ def load_config(
     lectures_dir: Path | None = None,
     config_path: Path | None = None,
 ) -> AppConfig:
+    """Resolve the lecture directory.
+
+    Explicit beats ambient: `--lectures-dir`, then an explicit `--config` file,
+    then the environment, then a discovered config file, then the default.
+    """
     if lectures_dir is not None:
-        return AppConfig(lectures_dir=lectures_dir, lectures_dir_source="flag")
+        return _config_for(str(lectures_dir), "flag")
+    if config_path is not None:
+        configured = _config_lectures_dir(config_path)
+        if configured is not None:
+            return _config_for(configured, f"config:{config_path}")
     env = os.environ.get(ENV_LECTURES_DIR)
     if env:
-        return AppConfig(lectures_dir=Path(env), lectures_dir_source="env")
-    found = config_path or _find_config()
+        return _config_for(env, "env")
+    found = _find_config()
     if found is not None:
-        payload = _read_toml(found)
-        if "lectures_dir" in payload:
+        configured = _config_lectures_dir(found)
+        if configured is not None:
+            return _config_for(configured, f"config:{found}")
+    return _config_for(DEFAULT_LECTURES_DIR, "default")
+
+
+def running_under_wsl() -> bool:
+    """True when this Linux process runs inside WSL, where C:\\ becomes /mnt/c."""
+    if platform.system() != "Linux":
+        return False
+    release = platform.uname().release.lower()
+    return "microsoft" in release or "wsl" in release
+
+
+def windows_path_to_wsl(value: str) -> str | None:
+    """Translate `C:\\Users\\...` to `/mnt/c/Users/...`; None if not a Windows path."""
+    match = _WINDOWS_DRIVE.match(value.strip())
+    if not match:
+        return None
+    drive, rest = match.groups()
+    tail = rest.replace("\\", "/").strip("/")
+    root = f"/mnt/{drive.lower()}"
+    return f"{root}/{tail}" if tail else root
+
+
+def _config_for(value: str, source: str) -> AppConfig:
+    if running_under_wsl():
+        translated = windows_path_to_wsl(value)
+        if translated is not None:
             return AppConfig(
-                lectures_dir=Path(str(payload["lectures_dir"])),
-                lectures_dir_source=f"config:{found}",
+                lectures_dir=Path(translated),
+                lectures_dir_source=f"{source} (WSL translation of {value})",
             )
-    return AppConfig(
-        lectures_dir=Path(DEFAULT_LECTURES_DIR),
-        lectures_dir_source="default",
-    )
+    return AppConfig(lectures_dir=Path(value), lectures_dir_source=source)
+
+
+def _config_lectures_dir(path: Path) -> str | None:
+    payload = _read_toml(path)
+    if "lectures_dir" not in payload:
+        return None
+    return str(payload["lectures_dir"])
 
 
 def lectures_dir_accessible(path: Path) -> bool:

@@ -82,7 +82,12 @@ python3 -m podleparsesskewl parse path/to/lecture.mp4 \
 
 # rebuild the plain HTML from an existing Document
 python3 -m podleparsesskewl render ./out/lecture/lecture.json
+
+# render into a different folder (the Still images are copied along)
+python3 -m podleparsesskewl render ./out/lecture/lecture.json -o ./elsewhere
 ```
+
+`render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
 End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command.
 
@@ -110,20 +115,44 @@ On any other machine (including this Linux worktree) that path is not visible. T
 2. Set `PODLEPARSESSKEWL_LECTURES_DIR` to a local folder, or
 3. Copy `podleparsesskewl.toml.example` to `podleparsesskewl.toml` and point `lectures_dir` at a reachable path.
 
+Your own `podleparsesskewl.toml` stays local; it is git-ignored. Only the example file is committed.
+
 Agents working on a machine that cannot see the Windows folder should retrieve the MP4s from `C:\Users\ayden\Videos\Lectures` onto the machine, then run `parse`.
 
-WSL:
+### Where the lecture directory comes from
+
+Explicit settings beat ambient ones, in this order:
+
+1. `--lectures-dir <path>`
+2. `--config <file>` (an explicitly named config file wins over the environment)
+3. `PODLEPARSESSKEWL_LECTURES_DIR`
+4. A discovered `podleparsesskewl.toml` (working directory, then `~/.config/podleparsesskewl/`)
+5. The default `C:\Users\ayden\Videos\Lectures`
+
+`pps doctor` prints the resolved path and which of these it came from.
+
+### WSL
+
+Under WSL, a Windows lecture directory is translated automatically, so `C:\Users\ayden\Videos\Lectures` is used as `/mnt/c/Users/ayden/Videos/Lectures`. That applies to the default, the config file, the environment variable, and the flag:
+
+```bash
+python3 -m podleparsesskewl list          # already reads /mnt/c/Users/ayden/Videos/Lectures
+python3 -m podleparsesskewl doctor        # shows the translation it applied
+```
+
+Setting the WSL path directly still works:
 
 ```bash
 export PODLEPARSESSKEWL_LECTURES_DIR=/mnt/c/Users/ayden/Videos/Lectures
-python3 -m podleparsesskewl list
 ```
 
 You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those binaries are not on `PATH`.
 
 ## Aesthetic HTML
 
-`/ezLectures` is an agent skill. It reads `lecture.json` and writes a dressed HTML view. It does not re-extract Stills or re-transcribe audio. See `.agents/skills/ezLectures/SKILL.md`.
+`/ezLectures` is an agent skill. It reads `lecture.json` and writes a dressed HTML view. It does not re-extract Stills or re-transcribe audio.
+
+The canonical skill file is `.agents/skills/ezLectures/SKILL.md` - edit that one. `.claude/skills/ezLectures/SKILL.md` exists so Claude Code can discover `/ezLectures` and points back at the canonical file; `.grok/skills/ezLectures/SKILL.md` mirrors it for Grok.
 
 ## Tests
 

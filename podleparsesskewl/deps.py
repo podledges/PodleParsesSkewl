@@ -80,9 +80,10 @@ def _ffmpeg_status() -> ToolStatus:
 def _ffprobe_status(ffmpeg_path: Path | None) -> ToolStatus:
     path = _resolve_binary("ffprobe", ENV_FFPROBE)
     if path is None and ffmpeg_path is not None:
-        sibling = ffmpeg_path.with_name("ffprobe")
-        if sibling.is_file():
-            path = sibling
+        for sibling in _ffprobe_siblings(ffmpeg_path):
+            if sibling.is_file():
+                path = sibling
+                break
     if path is None:
         return ToolStatus(
             name="ffprobe",
@@ -92,6 +93,17 @@ def _ffprobe_status(ffmpeg_path: Path | None) -> ToolStatus:
         )
     version = _run_version([str(path), "-version"])
     return ToolStatus(name="ffprobe", found=True, path=path, detail=version)
+
+
+def _ffprobe_siblings(ffmpeg_path: Path) -> list[Path]:
+    """Candidate ffprobe paths next to ffmpeg, keeping its own suffix (.exe)."""
+    names = ["ffprobe" + ffmpeg_path.suffix, "ffprobe"]
+    seen: list[Path] = []
+    for name in names:
+        candidate = ffmpeg_path.with_name(name)
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
 
 
 def _transcriber_status() -> ToolStatus:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from podleparsesskewl.errors import PpsError
+
 SCHEMA_V1 = "podleparsesskewl.lecture/v1"
 
 
@@ -71,26 +73,34 @@ class LectureDocument:
 
     @classmethod
     def from_json_dict(cls, payload: dict[str, Any]) -> LectureDocument:
-        source = SourceInfo(**payload["source"])
-        stills = tuple(Still(**item) for item in payload["stills"])
-        cues = tuple(Cue(**item) for item in payload["transcript"]["cues"])
-        transcript = Transcript(cues=cues, source=payload["transcript"]["source"])
-        sections = tuple(
-            Section(
-                still_id=item["still_id"],
-                said=item["said"],
-                cue_indexes=tuple(item.get("cue_indexes", ())),
+        """Build a Document from parsed JSON, reporting bad shapes as PpsError."""
+        try:
+            source = SourceInfo(**payload["source"])
+            stills = tuple(Still(**item) for item in payload["stills"])
+            cues = tuple(Cue(**item) for item in payload["transcript"]["cues"])
+            transcript = Transcript(cues=cues, source=payload["transcript"]["source"])
+            sections = tuple(
+                Section(
+                    still_id=item["still_id"],
+                    said=item["said"],
+                    cue_indexes=tuple(item.get("cue_indexes", ())),
+                )
+                for item in payload["sections"]
             )
-            for item in payload["sections"]
-        )
-        return cls(
-            schema=payload.get("schema", SCHEMA_V1),
-            title=payload["title"],
-            source=source,
-            stills=stills,
-            transcript=transcript,
-            sections=sections,
-        )
+            return cls(
+                schema=payload.get("schema", SCHEMA_V1),
+                title=payload["title"],
+                source=source,
+                stills=stills,
+                transcript=transcript,
+                sections=sections,
+            )
+        except KeyError as exc:
+            raise PpsError(
+                f"Lecture Document is missing the required field {exc.args[0]!r}"
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise PpsError(f"Lecture Document has an invalid field: {exc}") from exc
 
 
 def still_id(index: int) -> str:

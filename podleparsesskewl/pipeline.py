@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from podleparsesskewl.align import align_cues_to_stills
 from podleparsesskewl.deps import Environment, inspect_environment
@@ -17,6 +17,7 @@ from podleparsesskewl.stills import (
     DEFAULT_CHANGE_RATIO,
     DEFAULT_MIN_HOLD_SECONDS,
     DEFAULT_SAMPLE_FPS,
+    FrameSignature,
     segment_stills,
 )
 from podleparsesskewl.transcribe import load_transcript
@@ -76,12 +77,12 @@ def parse_recording(
         recording,
         work_dir,
         environment,
-        duration_seconds=probe.duration_seconds,
         fps=options.sample_fps,
     )
+    duration_seconds = _effective_duration(probe.duration_seconds, frames, options.sample_fps)
     intervals = segment_stills(
         frames,
-        duration_seconds=probe.duration_seconds,
+        duration_seconds=duration_seconds,
         change_ratio=options.change_ratio,
         min_hold_seconds=options.min_hold_seconds,
     )
@@ -112,7 +113,7 @@ def parse_recording(
         title=title,
         source=SourceInfo(
             recording=str(recording),
-            duration_seconds=probe.duration_seconds,
+            duration_seconds=duration_seconds,
             transcript_source=transcript.source,
             width=probe.width,
             height=probe.height,
@@ -133,6 +134,48 @@ def parse_recording(
     )
 
 
+def _effective_duration(
+    probed_seconds: float,
+    frames: list[FrameSignature],
+    fps: float,
+) -> float:
+    """Fall back to the sampled frames when ffprobe reports no usable duration."""
+    if probed_seconds > 0:
+        return probed_seconds
+    if not frames:
+        return 0.0
+    step = 1.0 / fps if fps > 0 else 0.0
+    return frames[-1].time_seconds + step
+
+
+def copy_still_images(
+    document: LectureDocument,
+    source_dir: Path,
+    output_dir: Path,
+) -> list[str]:
+    """Copy each Still image next to a relocated Document; return missing ones."""
+    if source_dir.resolve() == output_dir.resolve():
+        return []
+    missing: list[str] = []
+    for still in document.stills:
+        reference = still.image
+        if not reference:
+            continue
+        relative = PurePosixPath(reference)
+        if relative.is_absolute() or PureWindowsPath(reference).is_absolute():
+            continue
+        if ".." in relative.parts:
+            raise PpsError(f"Still image path escapes the Lecture folder: {reference}")
+        source = source_dir / Path(*relative.parts)
+        if not source.is_file():
+            missing.append(reference)
+            continue
+        destination = output_dir / Path(*relative.parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    return missing
+
+
 def write_document(document: LectureDocument, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "lecture.json"
@@ -150,7 +193,10 @@ def load_document(path: Path) -> LectureDocument:
         raise PpsError(f"could not read Lecture Document {path}: {exc}") from exc
     if not isinstance(payload, dict):
         raise PpsError(f"Lecture Document {path} must be a JSON object")
-    return LectureDocument.from_json_dict(payload)
+    try:
+        return LectureDocument.from_json_dict(payload)
+    except PpsError as exc:
+        raise PpsError(f"{path}: {exc}") from exc
 
 
 def default_output_dir(recording: Path) -> Path:

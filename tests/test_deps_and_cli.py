@@ -7,8 +7,27 @@ from pathlib import Path
 from unittest import mock
 
 from podleparsesskewl.cli import main
-from podleparsesskewl.config import DEFAULT_LECTURES_DIR, load_config
-from podleparsesskewl.deps import inspect_environment
+from podleparsesskewl.config import DEFAULT_LECTURES_DIR, load_config, windows_path_to_wsl
+from podleparsesskewl.deps import _ffprobe_status, inspect_environment
+
+
+def _render_fixture_document():
+    from podleparsesskewl.document import (
+        Cue,
+        LectureDocument,
+        Section,
+        SourceInfo,
+        Still,
+        Transcript,
+    )
+
+    return LectureDocument(
+        title="Rendered",
+        source=SourceInfo("lecture.mp4", 4.0, "sidecar:srt:lecture.srt"),
+        stills=(Still("still-001", 1, 0.0, 4.0, "stills/still-001.png"),),
+        transcript=Transcript((Cue(1.0, 2.0, "Said here."),), "sidecar:srt:lecture.srt"),
+        sections=(Section("still-001", "Said here.", (0,)),),
+    )
 
 
 class ConfigTests(unittest.TestCase):
@@ -16,7 +35,8 @@ class ConfigTests(unittest.TestCase):
         env = {key: value for key, value in os.environ.items() if key != "PODLEPARSESSKEWL_LECTURES_DIR"}
         with mock.patch.dict(os.environ, env, clear=True):
             with mock.patch("podleparsesskewl.config._find_config", return_value=None):
-                config = load_config()
+                with mock.patch("podleparsesskewl.config.running_under_wsl", return_value=False):
+                    config = load_config()
         self.assertEqual(str(config.lectures_dir), DEFAULT_LECTURES_DIR)
         self.assertEqual(config.lectures_dir_source, "default")
 
@@ -26,6 +46,50 @@ class ConfigTests(unittest.TestCase):
                 config = load_config()
             self.assertEqual(config.lectures_dir, Path(raw))
             self.assertEqual(config.lectures_dir_source, "env")
+
+    def test_explicit_config_file_beats_the_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            chosen = folder / "chosen"
+            chosen.mkdir()
+            config_file = folder / "my.toml"
+            config_file.write_text(f'lectures_dir = "{chosen.as_posix()}"\n', encoding="utf-8")
+            with mock.patch.dict(
+                os.environ, {"PODLEPARSESSKEWL_LECTURES_DIR": str(folder / "stale")}
+            ):
+                config = load_config(config_path=config_file)
+        self.assertEqual(config.lectures_dir, chosen)
+        self.assertIn("config:", config.lectures_dir_source)
+
+    def test_config_file_without_lectures_dir_falls_back_to_the_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            config_file = folder / "my.toml"
+            config_file.write_text("# nothing set here\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"PODLEPARSESSKEWL_LECTURES_DIR": raw}):
+                config = load_config(config_path=config_file)
+        self.assertEqual(config.lectures_dir, Path(raw))
+        self.assertEqual(config.lectures_dir_source, "env")
+
+    def test_windows_lecture_dir_is_translated_under_wsl(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config_file = Path(raw) / "my.toml"
+            config_file.write_text(
+                'lectures_dir = "C:\\\\Users\\\\ayden\\\\Videos\\\\Lectures"\n', encoding="utf-8"
+            )
+            with mock.patch("podleparsesskewl.config.running_under_wsl", return_value=True):
+                config = load_config(config_path=config_file)
+        self.assertEqual(config.lectures_dir, Path("/mnt/c/Users/ayden/Videos/Lectures"))
+        self.assertIn("C:\\Users\\ayden\\Videos\\Lectures", config.lectures_dir_source)
+
+    def test_windows_path_translation_leaves_posix_paths_alone(self) -> None:
+        self.assertEqual(
+            windows_path_to_wsl(r"C:\Users\ayden\Videos\Lectures"),
+            "/mnt/c/Users/ayden/Videos/Lectures",
+        )
+        self.assertEqual(windows_path_to_wsl("D:/Media/Lectures"), "/mnt/d/Media/Lectures")
+        self.assertIsNone(windows_path_to_wsl("/mnt/c/Users/ayden/Videos/Lectures"))
+        self.assertIsNone(windows_path_to_wsl("./local"))
 
 
 class DoctorTests(unittest.TestCase):
@@ -47,6 +111,36 @@ class DoctorTests(unittest.TestCase):
             with mock.patch("podleparsesskewl.cli.format_doctor", return_value="doctor"):
                 code = main(["doctor"])
         self.assertEqual(code, 1)
+
+    def test_ffprobe_is_found_next_to_a_windows_ffmpeg_exe(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            ffmpeg = folder / "ffmpeg.exe"
+            ffmpeg.write_bytes(b"")
+            probe = folder / "ffprobe.exe"
+            probe.write_bytes(b"")
+            with mock.patch("podleparsesskewl.deps._resolve_binary", return_value=None):
+                with mock.patch(
+                    "podleparsesskewl.deps._run_version", return_value="ffprobe version test"
+                ):
+                    status = _ffprobe_status(ffmpeg)
+        self.assertTrue(status.found)
+        self.assertEqual(status.path, probe)
+
+    def test_ffprobe_is_still_found_next_to_a_suffixless_ffmpeg(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            ffmpeg = folder / "ffmpeg"
+            ffmpeg.write_bytes(b"")
+            probe = folder / "ffprobe"
+            probe.write_bytes(b"")
+            with mock.patch("podleparsesskewl.deps._resolve_binary", return_value=None):
+                with mock.patch(
+                    "podleparsesskewl.deps._run_version", return_value="ffprobe version test"
+                ):
+                    status = _ffprobe_status(ffmpeg)
+        self.assertTrue(status.found)
+        self.assertEqual(status.path, probe)
 
     def test_parse_without_recording_explains_usage(self) -> None:
         code = main(["parse"])
@@ -82,3 +176,54 @@ class DoctorTests(unittest.TestCase):
             html = (folder / "lecture.html").read_text(encoding="utf-8")
             self.assertIn("Said here.", html)
             self.assertIn("<hr>", html)
+
+    def test_render_to_another_folder_copies_the_still_images(self) -> None:
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            image = source / "stills" / "still-001.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"\x89PNG image bytes")
+            path = write_document(document, source)
+            target = folder / "elsewhere"
+
+            code = main(["render", str(path), "-o", str(target)])
+
+            self.assertEqual(code, 0)
+            html = (target / "lecture.html").read_text(encoding="utf-8")
+            self.assertIn('src="stills/still-001.png"', html)
+            copied = target / "stills" / "still-001.png"
+            self.assertTrue(copied.is_file(), "rendered HTML points at an image that was not copied")
+            self.assertEqual(copied.read_bytes(), image.read_bytes())
+            self.assertTrue((target / "lecture.json").is_file())
+
+    def test_render_leaves_the_source_document_untouched(self) -> None:
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(document, folder)
+            path.write_text(
+                path.read_text(encoding="utf-8").replace(
+                    '"title": "Rendered"', '"title": "Rendered",\n  "notes": "hand added"'
+                ),
+                encoding="utf-8",
+            )
+            before = path.read_text(encoding="utf-8")
+
+            code = main(["render", str(path)])
+
+            self.assertEqual(code, 0)
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+    def test_render_rejects_a_structurally_invalid_document(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text('{"title": "x"}', encoding="utf-8")
+            code = main(["render", str(path)])
+        self.assertEqual(code, 2)

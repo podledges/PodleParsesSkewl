@@ -32,9 +32,9 @@ def render_html(document: LectureDocument) -> str:
         f"<h1>{html.escape(document.title)}</h1>",
         f'<p class="meta">Duration {html.escape(format_clock(document.source.duration_seconds))} · Transcript {html.escape(document.source.transcript_source)}</p>',
     ]
+    said_by_still = _said_by_still(document)
     for index, still in enumerate(document.stills):
-        section = document.sections[index] if index < len(document.sections) else None
-        said = section.said if section is not None else ""
+        said = said_by_still.get(still.id, "")
         if index > 0:
             parts.append("<hr>")
         parts.append(f'<section id="{html.escape(still.id)}">')
@@ -57,9 +57,9 @@ def render_markdown(document: LectureDocument) -> str:
         f"Duration {format_clock(document.source.duration_seconds)} · Transcript {document.source.transcript_source}",
         "",
     ]
+    said_by_still = _said_by_still(document)
     for index, still in enumerate(document.stills):
-        section = document.sections[index] if index < len(document.sections) else None
-        said = section.said if section is not None else ""
+        said = said_by_still.get(still.id, "")
         if index > 0:
             lines.append("---")
             lines.append("")
@@ -81,6 +81,11 @@ def write_plain_views(document: LectureDocument, output_dir: Path) -> tuple[Path
     html_path.write_text(render_html(document), encoding="utf-8")
     md_path.write_text(render_markdown(document), encoding="utf-8")
     return html_path, md_path
+
+
+def _said_by_still(document: LectureDocument) -> dict[str, str]:
+    """Honour the declared Section.still_id link rather than list position."""
+    return {section.still_id: section.said for section in document.sections}
 
 
 def _when(still: Still) -> str:

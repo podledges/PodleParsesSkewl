@@ -18,6 +18,7 @@ from podleparsesskewl.deps import format_doctor, inspect_environment
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.pipeline import (
     ParseOptions,
+    copy_still_images,
     default_output_dir,
     load_document,
     parse_recording,
@@ -183,8 +184,15 @@ def _cmd_parse(args: argparse.Namespace) -> int:
 
 def _cmd_render(args: argparse.Namespace) -> int:
     document = load_document(args.document)
-    output = args.output if args.output is not None else args.document.parent
-    write_document(document, output)
+    source_dir = args.document.parent
+    output = args.output if args.output is not None else source_dir
+    output.mkdir(parents=True, exist_ok=True)
+    relocated = output.resolve() != source_dir.resolve()
+    if relocated:
+        missing = copy_still_images(document, source_dir, output)
+        write_document(document, output)
+        for reference in missing:
+            print(f"warning: Still image not found, copied nothing for {reference}", file=sys.stderr)
     html_path, md_path = write_plain_views(document, output)
     print(f"HTML      {html_path}")
     print(f"Markdown  {md_path}")

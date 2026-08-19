@@ -14,7 +14,9 @@ python3 -m unittest discover -s tests -v
 
 ## Skills
 
-`/ezLectures` renders an aesthetic HTML view from an existing `lecture.json`. Canonical skill: `.agents/skills/ezLectures/SKILL.md` (mirrored at `.grok/skills/ezLectures/SKILL.md`).
+`/ezLectures` renders an aesthetic HTML view from an existing `lecture.json`.
+The one canonical definition is `.agents/skills/ezLectures/SKILL.md`; edit only that file.
+`.claude/skills/ezLectures/SKILL.md` is a discovery pointer back to it, and `.grok/skills/ezLectures/SKILL.md` is a harness mirror.
 
 ## Constraints
 

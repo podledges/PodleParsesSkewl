@@ -44,10 +44,8 @@ def probe_recording(path: Path, env: Environment) -> Probe:
         payload = json.loads(result.stdout or "{}")
     except json.JSONDecodeError as exc:
         raise PpsError(f"ffprobe returned invalid JSON for {path}") from exc
-    duration = 0.0
     fmt = payload.get("format") or {}
-    if fmt.get("duration") is not None:
-        duration = float(fmt["duration"])
+    duration = _optional_seconds(fmt.get("duration")) or 0.0
     width = None
     height = None
     has_audio = False
@@ -60,8 +58,8 @@ def probe_recording(path: Path, env: Environment) -> Probe:
                 width = int(stream["width"])
             if stream.get("height"):
                 height = int(stream["height"])
-            if duration == 0.0 and stream.get("duration") is not None:
-                duration = float(stream["duration"])
+            if duration == 0.0:
+                duration = _optional_seconds(stream.get("duration")) or 0.0
         elif kind == "audio":
             has_audio = True
     return Probe(
@@ -73,12 +71,24 @@ def probe_recording(path: Path, env: Environment) -> Probe:
     )
 
 
+def _optional_seconds(value: object) -> float | None:
+    """Read an ffprobe duration field, tolerating absent or "N/A" values."""
+    if value is None:
+        return None
+    try:
+        seconds = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if seconds != seconds or seconds < 0:  # NaN or negative
+        return None
+    return seconds
+
+
 def sample_signatures(
     recording: Path,
     work_dir: Path,
     env: Environment,
     *,
-    duration_seconds: float,
     fps: float = DEFAULT_SAMPLE_FPS,
     width: int = DEFAULT_SAMPLE_WIDTH,
     height: int = DEFAULT_SAMPLE_HEIGHT,
@@ -106,10 +116,7 @@ def sample_signatures(
     frame_size = width * height
     data = raw_path.read_bytes()
     frames: list[FrameSignature] = []
-    expected = int(duration_seconds * fps) + 2
     for index in range(0, len(data) // frame_size):
-        if index > expected + 30:
-            break
         offset = index * frame_size
         samples = data[offset : offset + frame_size]
         frames.append(
