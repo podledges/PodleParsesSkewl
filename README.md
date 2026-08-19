@@ -19,7 +19,7 @@ lecture.lecture/
     ...
 ```
 
-The plain view is: Still image, a line separator, then the transcript that belongs to that Still. Repeat.
+The plain view is: Still image, a line separator, then the transcript that belongs to that Still. Repeat, with a separator between Stills. A Still nobody spoke over keeps that separator but shows no empty transcript block.
 
 A **Still** is a visually stable interval plus the representative image taken from it. A slide change is the common case. A small webcam bubble is tolerated and should not split a stable slide.
 
@@ -98,6 +98,8 @@ The program looks next to the MP4 for `lecture.srt`, `lecture.vtt`, or `lecture.
 A JSON sidecar must be a list of cues, or an object holding a `cues` or `segments` list, where each cue has `start`/`end` (seconds or `HH:MM:SS.mmm`) and `text`.
 
 A sidecar always wins over audio, so an empty or unreadable one stops the run instead of quietly producing a Lecture with no Said. If a capture tool left a stub `lecture.srt` behind and you want the audio transcribed, delete the stub and run `parse` again.
+
+Audio transcription is held to the same bar: if the local engine finds no speech at all - a silent or very quiet Recording - `parse` says so rather than writing a Lecture whose every Said is blank.
 
 A `lecture.json` Lecture Document sits at exactly the path a JSON sidecar would, so the program recognizes its own canonical output and never feeds it back in as a transcript. If a Recording has no audio track and no sidecar, `parse` says so instead of asking ffmpeg for audio that is not there.
 

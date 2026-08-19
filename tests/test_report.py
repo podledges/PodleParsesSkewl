@@ -116,6 +116,45 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("Hello class.", html)
         self.assertLess(first_still, second_still)
 
+    def test_duplicate_still_ids_are_reported(self) -> None:
+        from podleparsesskewl.report import pairing_problems
+
+        document = _document()
+        cloned = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=(
+                document.stills[0],
+                Still("still-001", 2, 5.0, 10.0, "stills/still-002.png"),
+            ),
+            transcript=document.transcript,
+            sections=(document.sections[0],),
+        )
+        problems = pairing_problems(cloned)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("still-001", problems[0])
+        self.assertEqual(render_html(cloned).count("Hello class."), 2)
+
+    def test_a_silent_still_keeps_one_separator_and_no_empty_said(self) -> None:
+        document = _document()
+        silent_first = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=document.stills,
+            transcript=document.transcript,
+            sections=(Section("still-001", "", ()), document.sections[1]),
+        )
+        html = render_html(silent_first)
+        markdown = render_markdown(silent_first)
+
+        self.assertNotIn('<div class="said"></div>', html)
+        self.assertNotIn("<hr>\n<hr>", html)
+        between = html.index("stills/still-001.png"), html.index("stills/still-002.png")
+        self.assertEqual(html.count("<hr>", *between), 1)
+        self.assertNotIn("---\n\n---", markdown)
+        self.assertIn("---", markdown)
+        self.assertIn("Look at this graph.", markdown)
+
     def test_invalid_document_payload_is_a_user_error(self) -> None:
         from podleparsesskewl.errors import PpsError
 
@@ -195,10 +234,10 @@ class ReportTests(unittest.TestCase):
             json.loads(path.read_text(encoding="utf-8"), parse_constant=reject)
 
     def test_orphaned_section_ids_are_reported(self) -> None:
-        from podleparsesskewl.report import section_problems
+        from podleparsesskewl.report import pairing_problems
 
         document = _document()
-        self.assertEqual(section_problems(document), [])
+        self.assertEqual(pairing_problems(document), [])
         mistyped = LectureDocument(
             title=document.title,
             source=document.source,
@@ -209,13 +248,13 @@ class ReportTests(unittest.TestCase):
                 document.sections[1],
             ),
         )
-        problems = section_problems(mistyped)
+        problems = pairing_problems(mistyped)
         self.assertEqual(len(problems), 1)
         self.assertIn("still-01", problems[0])
         self.assertNotIn("Hello class.", render_html(mistyped))
 
     def test_duplicate_section_ids_keep_every_said_and_are_reported(self) -> None:
-        from podleparsesskewl.report import section_problems
+        from podleparsesskewl.report import pairing_problems
 
         document = _document()
         split = LectureDocument(
@@ -235,7 +274,7 @@ class ReportTests(unittest.TestCase):
             self.assertIn("AAA", view)
             self.assertIn("BBB", view)
             self.assertLess(view.index("AAA"), view.index("BBB"))
-        problems = section_problems(split)
+        problems = pairing_problems(split)
         self.assertEqual(len(problems), 1)
         self.assertIn("still-001", problems[0])
 

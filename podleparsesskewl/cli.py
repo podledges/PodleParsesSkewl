@@ -24,7 +24,7 @@ from podleparsesskewl.pipeline import (
     load_document,
     parse_recording,
 )
-from podleparsesskewl.report import section_problems, write_plain_views
+from podleparsesskewl.report import pairing_problems, write_plain_views
 from podleparsesskewl.stills import DEFAULT_CHANGE_RATIO, DEFAULT_MIN_HOLD_SECONDS, DEFAULT_SAMPLE_FPS
 
 
@@ -198,7 +198,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
             shutil.copyfile(args.document, output / "lecture.json")
         for problem in problems:
             print(f"warning: {problem}", file=sys.stderr)
-    for problem in section_problems(document):
+    for problem in pairing_problems(document):
         print(f"warning: {problem}", file=sys.stderr)
     html_path, md_path = write_plain_views(document, output)
     print(f"HTML      {html_path}")

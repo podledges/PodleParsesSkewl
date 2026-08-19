@@ -110,6 +110,19 @@ class TranscribeTests(unittest.TestCase):
                 transcript = transcribe_wav(wav, Mock())
         self.assertEqual([cue.text for cue in transcript.cues], ["Hello class."])
 
+    def test_an_engine_that_finds_no_speech_is_a_clear_error(self) -> None:
+        model = Mock()
+        model.transcribe.return_value = ([], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        message = str(raised.exception).lower()
+        self.assertIn("no speech", message)
+        self.assertIn("sidecar", message)
+
     def test_engine_cues_become_a_transcript(self) -> None:
         segment = types.SimpleNamespace(start=1.0, end=2.0, text=" Hello class. ")
         model = Mock()

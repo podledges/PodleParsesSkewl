@@ -20,7 +20,11 @@ hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
 
 
 def render_html(document: LectureDocument) -> str:
-    """Render the plain program HTML view: Shown, separator, Said, per Still."""
+    """Render the plain program HTML view: Shown, separator, Said, per Still.
+
+    A Still nobody spoke over keeps its separator from the next Still but drops
+    the empty Said block, so the reader never meets two rules in a row.
+    """
     parts = [
         "<!DOCTYPE html>",
         '<html lang="en">',
@@ -44,8 +48,9 @@ def render_html(document: LectureDocument) -> str:
             f'<img class="still" src="{html.escape(still.image)}" alt="Still {still.index}">'
         )
         parts.append(f'<p class="when">{html.escape(_when(still))}</p>')
-        parts.append("<hr>")
-        parts.append(f'<div class="said">{html.escape(said) if said else ""}</div>')
+        if said:
+            parts.append("<hr>")
+            parts.append(f'<div class="said">{html.escape(said)}</div>')
         parts.append("</section>")
     parts.extend(["</body>", "</html>", ""])
     return "\n".join(parts)
@@ -69,9 +74,9 @@ def render_markdown(document: LectureDocument) -> str:
         lines.append("")
         lines.append(_when(still))
         lines.append("")
-        lines.append("---")
-        lines.append("")
         if said:
+            lines.append("---")
+            lines.append("")
             lines.append(said)
             lines.append("")
     return "\n".join(lines)
@@ -87,11 +92,19 @@ def write_plain_views(document: LectureDocument, output_dir: Path) -> tuple[Path
     return html_path, md_path
 
 
-def section_problems(document: LectureDocument) -> list[str]:
-    """Report Section links whose Said would otherwise vanish without a word."""
-    known = {still.id for still in document.stills}
-    counts: dict[str, int] = {}
+def pairing_problems(document: LectureDocument) -> list[str]:
+    """Report Still/Section links that would quietly lose or duplicate Said."""
     problems: list[str] = []
+    still_counts: dict[str, int] = {}
+    for still in document.stills:
+        still_counts[still.id] = still_counts.get(still.id, 0) + 1
+        if still_counts[still.id] == 2:
+            problems.append(
+                f"still id {still.id!r} is claimed by more than one Still, so the same "
+                "Said is shown under each of their images"
+            )
+    known = set(still_counts)
+    counts: dict[str, int] = {}
     for section in document.sections:
         counts[section.still_id] = counts.get(section.still_id, 0) + 1
         if section.still_id not in known and counts[section.still_id] == 1:

@@ -49,7 +49,18 @@ def load_transcript(
 
 
 def transcribe_wav(wav: Path, env: Environment) -> Transcript:
-    """Run the first available local engine against a WAV file."""
+    """Run the first available local engine, insisting on some speech."""
+    transcript = _run_engine(wav)
+    if not transcript.cues:
+        raise PpsError(
+            f"local transcription ({transcript.source}) found no speech in the Recording. "
+            "The audio may be silent, too quiet, or in a form the engine filtered out. "
+            "Supply a .srt, .vtt, or .json caption sidecar to review this Lecture."
+        )
+    return transcript
+
+
+def _run_engine(wav: Path) -> Transcript:
     try:
         import faster_whisper
     except ImportError:
@@ -68,7 +79,6 @@ def transcribe_wav(wav: Path, env: Environment) -> Transcript:
         path = shutil.which(binary)
         if path:
             return _whisper_cli(wav, path, binary)
-
     raise PpsError(
         "a transcription engine was reported available but could not be used. "
         "Install faster-whisper, or supply a caption sidecar."
