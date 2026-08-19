@@ -9,6 +9,6 @@ build/
 .mypy_cache/
 podleparsesskewl.toml
 *.lecture/
-_work/
+_work*/
 .output/
 out/

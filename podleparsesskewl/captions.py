@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from podleparsesskewl.document import SCHEMA_V1, Cue, Transcript, finite_seconds
+from podleparsesskewl.document import SCHEMA_V1, Cue, Transcript, cue_text, finite_seconds
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.timefmt import parse_clock
 
@@ -159,12 +159,12 @@ def parse_json_transcript(text: str) -> list[Cue]:
     if not isinstance(raw_cues, list):
         raise PpsError("JSON transcript must be a list of cues or {cues: [...]}")
     cues: list[Cue] = []
-    for item in raw_cues:
+    for position, item in enumerate(raw_cues):
         if not isinstance(item, dict):
-            raise PpsError("each JSON cue must be an object")
+            raise PpsError(f"JSON cue {position} must be an object")
         start = _json_seconds(item, "start_seconds", "start")
         end = _json_seconds(item, "end_seconds", "end")
-        body = str(item.get("text", "")).strip()
+        body = cue_text(item.get("text", ""), f"JSON cue {position} text")
         if body:
             cues.append(Cue(start_seconds=start, end_seconds=end, text=body))
     return cues

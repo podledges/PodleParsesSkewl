@@ -116,6 +116,29 @@ class CaptionTests(unittest.TestCase):
                         load_sidecar(path)
                 self.assertIn("finite", str(raised.exception))
 
+    def test_non_string_cue_text_is_never_turned_into_said(self) -> None:
+        for body in (
+            '[{"start": 1, "end": 2, "text": null}]',
+            '[{"start": 1, "end": 2, "text": 123}]',
+            '[{"start": 1, "end": 2, "text": {"a": 1}}]',
+            '[{"start": 1, "end": 2, "text": ["a"]}]',
+        ):
+            with self.subTest(body=body):
+                with tempfile.TemporaryDirectory() as raw:
+                    path = Path(raw) / "lecture.json"
+                    path.write_text(body, encoding="utf-8")
+                    with self.assertRaises(PpsError) as raised:
+                        load_sidecar(path)
+                self.assertIn("must be text", str(raised.exception))
+
+    def test_bool_cue_times_are_rejected_like_the_document_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "lecture.json"
+            path.write_text('[{"start": true, "end": 2, "text": "a"}]', encoding="utf-8")
+            with self.assertRaises(PpsError) as raised:
+                load_sidecar(path)
+        self.assertIn("bool", str(raised.exception))
+
     def test_missing_sidecar_file_is_a_user_error(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             with self.assertRaises(PpsError):

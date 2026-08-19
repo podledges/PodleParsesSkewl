@@ -84,6 +84,18 @@ class TranscribeTests(unittest.TestCase):
                     transcribe_wav(wav, Mock())
         self.assertIn("'soon'", str(raised.exception))
 
+    def test_a_non_string_engine_segment_is_a_user_error(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text={"word": "Hello"})
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        self.assertIn("must be text", str(raised.exception))
+
     def test_engine_cues_become_a_transcript(self) -> None:
         segment = types.SimpleNamespace(start=1.0, end=2.0, text=" Hello class. ")
         model = Mock()

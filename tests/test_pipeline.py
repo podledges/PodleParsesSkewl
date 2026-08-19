@@ -207,6 +207,91 @@ class WorkFolderTests(unittest.TestCase):
             )
 
 
+class FailedParseCleanupTests(unittest.TestCase):
+    def test_a_failing_parse_does_not_leave_scratch_folders_behind(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        env = Environment(
+            ffmpeg=ToolStatus("ffmpeg", True, Path("/usr/bin/ffmpeg"), "stub"),
+            ffprobe=ToolStatus("ffprobe", True, Path("/usr/bin/ffprobe"), "stub"),
+            transcriber=ToolStatus("transcriber", False, None, "none"),
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"stub")
+            (folder / "lecture.srt").write_text(
+                "1\n00:00:01,000 --> 00:00:02,000\nHello.\n", encoding="utf-8"
+            )
+            output = folder / "out"
+
+            def explode(*_args, **_kwargs):
+                raise PpsError("ffmpeg frame sampling failed")
+
+            with mock.patch(
+                "podleparsesskewl.pipeline.probe_recording",
+                return_value=SimpleNamespace(
+                    duration_seconds=3.0,
+                    width=640,
+                    height=480,
+                    has_audio=True,
+                    has_video=True,
+                ),
+            ):
+                with mock.patch(
+                    "podleparsesskewl.pipeline.sample_signatures", side_effect=explode
+                ):
+                    for _attempt in range(3):
+                        with self.assertRaises(PpsError):
+                            parse_recording(
+                                recording, ParseOptions(output_dir=output), env=env
+                            )
+
+            self.assertEqual(list(output.glob("_work*")), [])
+
+    def test_keep_work_preserves_this_runs_scratch_after_a_failure(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        env = Environment(
+            ffmpeg=ToolStatus("ffmpeg", True, Path("/usr/bin/ffmpeg"), "stub"),
+            ffprobe=ToolStatus("ffprobe", True, Path("/usr/bin/ffprobe"), "stub"),
+            transcriber=ToolStatus("transcriber", False, None, "none"),
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"stub")
+            (folder / "lecture.srt").write_text(
+                "1\n00:00:01,000 --> 00:00:02,000\nHello.\n", encoding="utf-8"
+            )
+            output = folder / "out"
+
+            with mock.patch(
+                "podleparsesskewl.pipeline.probe_recording",
+                return_value=SimpleNamespace(
+                    duration_seconds=3.0,
+                    width=640,
+                    height=480,
+                    has_audio=True,
+                    has_video=True,
+                ),
+            ):
+                with mock.patch(
+                    "podleparsesskewl.pipeline.sample_signatures",
+                    side_effect=PpsError("ffmpeg frame sampling failed"),
+                ):
+                    with self.assertRaises(PpsError):
+                        parse_recording(
+                            recording,
+                            ParseOptions(output_dir=output, keep_work=True),
+                            env=env,
+                        )
+
+            self.assertEqual(len(list(output.glob("_work*"))), 1)
+
+
 class PipelineTests(unittest.TestCase):
     def test_parse_without_ffmpeg_is_a_clear_error(self) -> None:
         missing = ToolStatus("ffmpeg", False, None, "not installed")

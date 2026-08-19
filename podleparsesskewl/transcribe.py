@@ -11,7 +11,7 @@ from typing import Iterator
 
 from podleparsesskewl.captions import discover_sidecar, load_sidecar
 from podleparsesskewl.deps import Environment
-from podleparsesskewl.document import Cue, Transcript, finite_seconds
+from podleparsesskewl.document import Cue, Transcript, cue_text, finite_seconds
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.media import extract_audio_wav
 
@@ -96,8 +96,8 @@ def _faster_whisper(wav: Path, module) -> Transcript:
     with _engine_failures(name):
         model = module.WhisperModel(model_name, device="cpu", compute_type="int8")
         segments, _info = model.transcribe(str(wav), vad_filter=True)
-        for segment in segments:
-            text = (segment.text or "").strip()
+        for position, segment in enumerate(segments):
+            text = cue_text(segment.text if segment.text is not None else "", f"{name} segment {position} text")
             if text:
                 cues.append(
                     Cue(
@@ -116,8 +116,8 @@ def _openai_whisper(wav: Path, module) -> Transcript:
     with _engine_failures(name):
         model = module.load_model(model_name)
         result = model.transcribe(str(wav), fp16=False)
-        for segment in result.get("segments") or []:
-            text = str(segment.get("text", "")).strip()
+        for position, segment in enumerate(result.get("segments") or []):
+            text = cue_text(segment.get("text", ""), f"{name} segment {position} text")
             if text:
                 cues.append(
                     Cue(
@@ -162,8 +162,8 @@ def _whisper_cli(wav: Path, binary: str, name: str) -> Transcript:
         payload = json.loads(json_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise PpsError(f"{name} wrote an unexpected JSON shape to {json_path}")
-        for segment in payload.get("segments") or []:
-            text = str(segment.get("text", "")).strip()
+        for position, segment in enumerate(payload.get("segments") or []):
+            text = cue_text(segment.get("text", ""), f"{name} segment {position} text")
             if text:
                 cues.append(
                     Cue(

@@ -66,70 +66,74 @@ def parse_recording(
         output_dir.mkdir(parents=True, exist_ok=True)
         work_dir = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=output_dir))
 
-    probe = probe_recording(recording, environment)
-    if not probe.has_video:
-        raise PpsError(f"Recording has no video stream: {recording}")
+    try:
+        probe = probe_recording(recording, environment)
+        if not probe.has_video:
+            raise PpsError(f"Recording has no video stream: {recording}")
 
-    transcript = load_transcript(
-        recording,
-        environment,
-        sidecar=options.sidecar,
-        work_dir=work_dir,
-        has_audio=probe.has_audio,
-    )
-    frames = sample_signatures(
-        recording,
-        work_dir,
-        environment,
-        fps=options.sample_fps,
-    )
-    duration_seconds = _effective_duration(probe.duration_seconds, frames, options.sample_fps)
-    intervals = segment_stills(
-        frames,
-        duration_seconds=duration_seconds,
-        change_ratio=options.change_ratio,
-        min_hold_seconds=options.min_hold_seconds,
-    )
-
-    stills: list[Still] = []
-    for index, interval in enumerate(intervals, start=1):
-        image_rel = still_image_name(index)
-        image_path = output_dir / image_rel
-        extract_still_png(
+        transcript = load_transcript(
             recording,
-            interval.representative_seconds,
-            image_path,
             environment,
+            sidecar=options.sidecar,
+            work_dir=work_dir,
+            has_audio=probe.has_audio,
         )
-        stills.append(
-            Still(
-                id=still_id(index),
-                index=index,
-                start_seconds=interval.start_seconds,
-                end_seconds=interval.end_seconds,
-                image=image_rel.replace("\\", "/"),
-            )
+        frames = sample_signatures(
+            recording,
+            work_dir,
+            environment,
+            fps=options.sample_fps,
+        )
+        duration_seconds = _effective_duration(
+            probe.duration_seconds, frames, options.sample_fps
+        )
+        intervals = segment_stills(
+            frames,
+            duration_seconds=duration_seconds,
+            change_ratio=options.change_ratio,
+            min_hold_seconds=options.min_hold_seconds,
         )
 
-    sections = align_cues_to_stills(transcript.cues, stills)
-    title = options.title if options.title else recording.stem
-    document = LectureDocument(
-        title=title,
-        source=SourceInfo(
-            recording=str(recording),
-            duration_seconds=duration_seconds,
-            transcript_source=transcript.source,
-            width=probe.width,
-            height=probe.height,
-        ),
-        stills=tuple(stills),
-        transcript=transcript,
-        sections=tuple(sections),
-    )
-    document_path = write_document(document, output_dir)
-    html_path, markdown_path = write_plain_views(document, output_dir)
-    if not options.keep_work:
-        shutil.rmtree(work_dir, ignore_errors=True)
+        stills: list[Still] = []
+        for index, interval in enumerate(intervals, start=1):
+            image_rel = still_image_name(index)
+            image_path = output_dir / image_rel
+            extract_still_png(
+                recording,
+                interval.representative_seconds,
+                image_path,
+                environment,
+            )
+            stills.append(
+                Still(
+                    id=still_id(index),
+                    index=index,
+                    start_seconds=interval.start_seconds,
+                    end_seconds=interval.end_seconds,
+                    image=image_rel.replace("\\", "/"),
+                )
+            )
+
+        sections = align_cues_to_stills(transcript.cues, stills)
+        title = options.title if options.title else recording.stem
+        document = LectureDocument(
+            title=title,
+            source=SourceInfo(
+                recording=str(recording),
+                duration_seconds=duration_seconds,
+                transcript_source=transcript.source,
+                width=probe.width,
+                height=probe.height,
+            ),
+            stills=tuple(stills),
+            transcript=transcript,
+            sections=tuple(sections),
+        )
+        document_path = write_document(document, output_dir)
+        html_path, markdown_path = write_plain_views(document, output_dir)
+    finally:
+        if not options.keep_work:
+            shutil.rmtree(work_dir, ignore_errors=True)
     return ParseResult(
         document=document,
         document_path=document_path,

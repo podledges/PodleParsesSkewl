@@ -347,6 +347,29 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(copied["notes"], "hand added")
             self.assertEqual(copied["stills"][0]["caption"], "annotated by an agent")
 
+    def test_render_warns_when_a_section_matches_no_still(self) -> None:
+        import contextlib
+        import io
+
+        from podleparsesskewl.pipeline import write_document
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(document, folder)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["sections"][0]["still_id"] = "still-01"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main(["render", str(path)])
+
+            self.assertEqual(code, 0)
+            self.assertIn("still-01", stderr.getvalue())
+            self.assertIn("warning:", stderr.getvalue())
+            self.assertNotIn("Said here.", (folder / "lecture.html").read_text(encoding="utf-8"))
+
     def test_render_rejects_a_structurally_invalid_document(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "lecture.json"

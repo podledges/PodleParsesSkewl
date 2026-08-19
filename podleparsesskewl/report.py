@@ -87,6 +87,16 @@ def write_plain_views(document: LectureDocument, output_dir: Path) -> tuple[Path
     return html_path, md_path
 
 
+def orphaned_section_ids(document: LectureDocument) -> list[str]:
+    """Section still_ids that match no Still, so their Said reaches no view."""
+    known = {still.id for still in document.stills}
+    seen: list[str] = []
+    for section in document.sections:
+        if section.still_id not in known and section.still_id not in seen:
+            seen.append(section.still_id)
+    return seen
+
+
 def _said_by_still(document: LectureDocument) -> dict[str, str]:
     """Honour the declared Section.still_id link rather than list position."""
     return {section.still_id: section.said for section in document.sections}

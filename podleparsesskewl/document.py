@@ -165,12 +165,24 @@ def _as_text(value: Any, field: str) -> str:
     return value
 
 
+def cue_text(value: Any, label: str) -> str:
+    """Return spoken text as-is; never coerce a non-string into invented Said."""
+    if not isinstance(value, str):
+        raise PpsError(
+            f"{label} must be text, got {_kind(value)}. Speech is never invented, "
+            "so the value is rejected rather than stringified."
+        )
+    return value.strip()
+
+
 def finite_seconds(value: Any, label: str) -> float:
     """Coerce a time to a finite float, the invariant every Document number holds.
 
     Applied on the way in and on the way out, so the program can never write a
     Lecture Document it would then refuse to read.
     """
+    if isinstance(value, bool):
+        raise PpsError(f"{label} must be a number of seconds, got bool")
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError) as exc:

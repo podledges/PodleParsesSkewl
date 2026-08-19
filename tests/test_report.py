@@ -194,6 +194,24 @@ class ReportTests(unittest.TestCase):
             path = write_document(_document(), folder)
             json.loads(path.read_text(encoding="utf-8"), parse_constant=reject)
 
+    def test_orphaned_section_ids_are_reported(self) -> None:
+        from podleparsesskewl.report import orphaned_section_ids
+
+        document = _document()
+        self.assertEqual(orphaned_section_ids(document), [])
+        mistyped = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=document.stills,
+            transcript=document.transcript,
+            sections=(
+                Section("still-01", "Hello class.", (0,)),
+                document.sections[1],
+            ),
+        )
+        self.assertEqual(orphaned_section_ids(mistyped), ["still-01"])
+        self.assertNotIn("Hello class.", render_html(mistyped))
+
     def test_html_head_declares_a_mobile_viewport(self) -> None:
         head = render_html(_document()).split("</head>")[0]
         self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', head)
