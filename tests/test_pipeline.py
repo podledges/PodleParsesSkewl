@@ -322,7 +322,6 @@ class PipelineTests(unittest.TestCase):
                     output_dir=output,
                     sample_fps=1.0,
                     min_hold_seconds=1.0,
-                    change_ratio=0.30,
                 ),
             )
             self.assertTrue(result.document_path.is_file())

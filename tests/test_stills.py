@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import unittest
 
 from podleparsesskewl.stills import FrameSignature, segment_stills
@@ -7,6 +8,8 @@ from podleparsesskewl.stills import FrameSignature, segment_stills
 WIDTH = 160
 HEIGHT = 90
 SLIDE_COLUMNS = 128
+PAPER = 235
+INK = 30
 
 
 def _frame(time: float, slide: int, webcam: int) -> FrameSignature:
@@ -49,15 +52,12 @@ class StillSegmentationTests(unittest.TestCase):
         self.assertEqual(intervals[1].representative_seconds, 5.0)
 
     def test_webcam_bubble_flicker_does_not_split_a_stable_slide(self) -> None:
-        frames = []
-        for i in range(10):
-            frames.append(_frame(float(i), slide=30, webcam=0 if i % 2 == 0 else 255))
-        for i in range(10, 20):
-            frames.append(_frame(float(i), slide=220, webcam=0 if i % 2 == 0 else 255))
-        intervals = segment_stills(frames, duration_seconds=20.0, min_hold_seconds=1.5)
-        self.assertEqual(len(intervals), 2)
-        self.assertEqual(intervals[0].end_seconds, 10.0)
-        self.assertEqual(intervals[1].start_seconds, 10.0)
+        slide = _white_slide(seed=1, bullets=4)
+        frames = [_with_bubble(slide, t) for t in range(12)]
+        intervals = segment_stills(frames, duration_seconds=12.0)
+        self.assertEqual(len(intervals), 1)
+        self.assertEqual(intervals[0].start_seconds, 0.0)
+        self.assertEqual(intervals[0].end_seconds, 12.0)
 
     def test_change_that_does_not_hold_is_ignored(self) -> None:
         frames = [_frame(float(i), slide=20, webcam=20) for i in range(4)]
@@ -66,3 +66,51 @@ class StillSegmentationTests(unittest.TestCase):
         intervals = segment_stills(frames, duration_seconds=8.0, min_hold_seconds=1.5)
         self.assertEqual(len(intervals), 1)
         self.assertEqual(intervals[0].end_seconds, 8.0)
+
+    def test_text_heavy_full_slide_swap_splits_at_defaults(self) -> None:
+        first = _white_slide(seed=1, bullets=4)
+        second = _white_slide(seed=2, bullets=4)
+        frames = [_with_bubble(first, t) for t in range(8)]
+        frames += [_with_bubble(second, t) for t in range(8, 16)]
+        intervals = segment_stills(frames, duration_seconds=16.0)
+        self.assertEqual(len(intervals), 2)
+        self.assertEqual(intervals[0].end_seconds, 8.0)
+        self.assertEqual(intervals[1].start_seconds, 8.0)
+
+    def test_one_bullet_progressive_build_stays_merged_at_defaults(self) -> None:
+        title_only = _white_slide(seed=1, bullets=0)
+        one_bullet = _white_slide(seed=1, bullets=1)
+        frames = [_with_bubble(title_only, t) for t in range(5)]
+        frames += [_with_bubble(one_bullet, t) for t in range(5, 10)]
+        intervals = segment_stills(frames, duration_seconds=10.0)
+        self.assertEqual(len(intervals), 1)
+
+
+def _white_slide(seed: int, bullets: int) -> bytearray:
+    pixels = bytearray([PAPER]) * (WIDTH * HEIGHT)
+    band = 60 + seed * 10
+    for row in range(0, 15):
+        for col in range(WIDTH):
+            pixels[row * WIDTH + col] = band
+    for n in range(bullets):
+        text_row = 26 + n * 11
+        line_rng = random.Random(seed * 10 + n)
+        for row in (text_row, text_row + 1, text_row + 2):
+            for col in range(12, 140):
+                if line_rng.random() < 0.45:
+                    pixels[row * WIDTH + col] = INK
+    return pixels
+
+
+def _with_bubble(base: bytearray, tick: int) -> FrameSignature:
+    rng = random.Random(1000 + tick)
+    frame = bytearray(base)
+    for row in range(66, 88):
+        for col in range(134, 158):
+            frame[row * WIDTH + col] = rng.randrange(256)
+    return FrameSignature(
+        time_seconds=float(tick),
+        width=WIDTH,
+        height=HEIGHT,
+        samples=bytes(frame),
+    )
