@@ -1,0 +1,313 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+from unittest import mock
+from unittest.mock import Mock
+
+from podleparsesskewl.errors import PpsError
+from podleparsesskewl.transcribe import TranscriptionOptions, load_transcript, transcribe_wav
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _faster_whisper_module(model) -> types.ModuleType:
+    module = types.ModuleType("faster_whisper")
+    module.WhisperModel = Mock(return_value=model)
+    return module
+
+
+def _only_ctranslate2(binary: str) -> str | None:
+    if binary == "whisper-ctranslate2":
+        return "/bin/whisper-ctranslate2"
+    return None
+
+
+class TranscribeTests(unittest.TestCase):
+    def test_sidecar_is_used_without_an_audio_engine(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = False
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            sidecar = folder / "lecture.srt"
+            sidecar.write_text((FIXTURES / "sample.srt").read_text(encoding="utf-8"))
+            transcript = load_transcript(recording, env)
+        self.assertTrue(transcript.source.startswith("sidecar:srt"))
+        self.assertEqual(transcript.cues[0].text, "Welcome to the first slide.")
+
+    def test_missing_sidecar_and_engine_is_a_clear_error(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = False
+        with tempfile.TemporaryDirectory() as raw:
+            recording = Path(raw) / "lecture.mp4"
+            recording.write_bytes(b"")
+            with self.assertRaises(PpsError) as raised:
+                load_transcript(recording, env)
+        message = str(raised.exception).lower()
+        self.assertIn("sidecar", message)
+        self.assertIn("faster-whisper", message)
+
+    def test_recording_without_audio_and_without_sidecar_says_so(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = True
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            with self.assertRaises(PpsError) as raised:
+                load_transcript(recording, env, work_dir=folder, has_audio=False)
+        message = str(raised.exception).lower()
+        self.assertIn("no audio track", message)
+        self.assertIn("sidecar", message)
+
+    def test_a_failing_audio_engine_is_a_user_error(self) -> None:
+        module = types.ModuleType("faster_whisper")
+        module.WhisperModel = Mock(side_effect=RuntimeError("could not download model"))
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        message = str(raised.exception)
+        self.assertIn("faster-whisper", message)
+        self.assertIn("could not download model", message)
+
+    def test_a_non_numeric_engine_cue_time_is_a_user_error(self) -> None:
+        segment = types.SimpleNamespace(start="soon", end=2.0, text="Hello")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        self.assertIn("'soon'", str(raised.exception))
+
+    def test_a_non_string_engine_segment_is_a_user_error(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text={"word": "Hello"})
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        self.assertIn("must be text", str(raised.exception))
+
+    def test_a_none_text_segment_does_not_abort_the_transcription(self) -> None:
+        segments = [
+            types.SimpleNamespace(start=1.0, end=2.0, text="Hello class."),
+            types.SimpleNamespace(start=3.0, end=4.0, text=None),
+        ]
+        model = Mock()
+        model.transcribe.return_value = (segments, None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                transcript = transcribe_wav(wav, Mock())
+        self.assertEqual([cue.text for cue in transcript.cues], ["Hello class."])
+
+    def test_an_engine_that_finds_no_speech_is_a_clear_error(self) -> None:
+        model = Mock()
+        model.transcribe.return_value = ([], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                with self.assertRaises(PpsError) as raised:
+                    transcribe_wav(wav, Mock())
+        message = str(raised.exception).lower()
+        self.assertIn("no speech", message)
+        self.assertIn("sidecar", message)
+
+    def test_engine_cues_become_a_transcript(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text=" Hello class. ")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
+                transcript = transcribe_wav(wav, Mock())
+        self.assertEqual(transcript.source, "audio:faster-whisper:base")
+        self.assertEqual(transcript.cues[0].text, "Hello class.")
+        self.assertEqual(transcript.cues[0].start_seconds, 1.0)
+
+    def test_faster_whisper_uses_configured_local_model_cache(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text="Hello class.")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            wav = folder / "audio.wav"
+            wav.write_bytes(b"")
+            cache = folder / "models"
+            module = _faster_whisper_module(model)
+            with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+                transcript = transcribe_wav(
+                    wav,
+                    Mock(),
+                    transcription=TranscriptionOptions(
+                        model="small",
+                        local_files_root=cache,
+                        offline=True,
+                    ),
+                )
+        module.WhisperModel.assert_called_once_with(
+            "small",
+            device="cpu",
+            compute_type="int8",
+            download_root=str(cache),
+            local_files_only=True,
+        )
+        self.assertEqual(transcript.source, "audio:faster-whisper:small")
+
+    def test_explicit_model_path_is_passed_without_creating_cache(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text="Hello class.")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            wav = folder / "audio.wav"
+            wav.write_bytes(b"")
+            model_path = folder / "existing-model"
+            model_path.mkdir()
+            cache = folder / "models"
+            module = _faster_whisper_module(model)
+            with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+                transcribe_wav(
+                    wav,
+                    Mock(),
+                    transcription=TranscriptionOptions(
+                        model_path=model_path,
+                        local_files_root=cache,
+                    ),
+                )
+        module.WhisperModel.assert_called_once_with(
+            str(model_path),
+            device="cpu",
+            compute_type="int8",
+            download_root=str(cache),
+            local_files_only=False,
+        )
+        self.assertFalse(cache.exists())
+
+    def test_missing_explicit_model_path_is_rejected_before_engine_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            missing = Path(raw) / "base"
+            with self.assertRaises(PpsError) as raised:
+                TranscriptionOptions(model_path=missing)
+        message = str(raised.exception)
+        self.assertIn("does not exist", message)
+        self.assertIn(str(missing), message)
+
+    def test_ctranslate2_cli_named_model_flow_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+                with mock.patch("podleparsesskewl.transcribe.shutil.which") as which:
+                    which.side_effect = _only_ctranslate2
+                    with mock.patch("podleparsesskewl.transcribe.subprocess.run") as run:
+                        with self.assertRaises(PpsError) as raised:
+                            transcribe_wav(wav, Mock())
+        message = str(raised.exception)
+        self.assertIn("whisper-ctranslate2", message)
+        self.assertIn("--whisper-model-path", message)
+        run.assert_not_called()
+
+    def test_ctranslate2_cli_accepts_explicit_local_model_path(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            wav = folder / "audio.wav"
+            wav.write_bytes(b"")
+            model_path = folder / "local-model"
+            model_path.mkdir()
+
+            def run_cli(command, check, capture_output, text):
+                (folder / "audio.json").write_text(
+                    json.dumps(
+                        {"segments": [{"start": 1.0, "end": 2.0, "text": " Hello "}]}
+                    ),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+                with mock.patch("podleparsesskewl.transcribe.shutil.which") as which:
+                    which.side_effect = _only_ctranslate2
+                    with mock.patch(
+                        "podleparsesskewl.transcribe.subprocess.run",
+                        side_effect=run_cli,
+                    ) as run:
+                        transcript = transcribe_wav(
+                            wav,
+                            Mock(),
+                            transcription=TranscriptionOptions(model_path=model_path),
+                        )
+        command = run.call_args.args[0]
+        self.assertEqual(transcript.source, f"audio:whisper-ctranslate2:{model_path}")
+        self.assertEqual([cue.text for cue in transcript.cues], ["Hello"])
+        self.assertIn(str(model_path), command)
+
+    def test_load_transcript_allows_explicit_model_path_with_only_ctranslate2(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = False
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            model_path = folder / "local-model"
+            model_path.mkdir()
+
+            def run_cli(command, check, capture_output, text):
+                (folder / "audio.json").write_text(
+                    json.dumps({"segments": [{"start": 1.0, "end": 2.0, "text": " Hello "}]}),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch(
+                "podleparsesskewl.transcribe.extract_audio_wav",
+                return_value=folder / "audio.wav",
+            ) as extract:
+                with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+                    with mock.patch("podleparsesskewl.transcribe.shutil.which") as which:
+                        which.side_effect = _only_ctranslate2
+                        with mock.patch(
+                            "podleparsesskewl.transcribe.subprocess.run",
+                            side_effect=run_cli,
+                        ):
+                            transcript = load_transcript(
+                                recording,
+                                env,
+                                work_dir=folder,
+                                transcription=TranscriptionOptions(model_path=model_path),
+                            )
+        extract.assert_called_once_with(recording, folder / "audio.wav", env)
+        self.assertEqual([cue.text for cue in transcript.cues], ["Hello"])
+
+    def test_explicit_sidecar_path(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = False
+        with tempfile.TemporaryDirectory() as raw:
+            recording = Path(raw) / "lecture.mp4"
+            recording.write_bytes(b"")
+            transcript = load_transcript(
+                recording,
+                env,
+                sidecar=FIXTURES / "sample.vtt",
+            )
+        self.assertTrue(transcript.source.startswith("sidecar:vtt"))
+        self.assertEqual(len(transcript.cues), 3)

@@ -1,0 +1,13 @@
+# Copy to podleparsesskewl.toml in the working directory, or to
+# ~/.config/podleparsesskewl/podleparsesskewl.toml
+#
+# Default on the captain's Windows machine:
+lectures_dir = "C:\\Users\\ayden\\Videos\\Lectures"
+
+# Under WSL the Windows path above is translated automatically to
+# /mnt/c/Users/ayden/Videos/Lectures, so it needs no separate entry.
+# You can still name the WSL path directly:
+# lectures_dir = "/mnt/c/Users/ayden/Videos/Lectures"
+#
+# An explicitly passed --config file wins over PODLEPARSESSKEWL_LECTURES_DIR.
+# Your own podleparsesskewl.toml is git-ignored; only this example is committed.
