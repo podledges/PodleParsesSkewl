@@ -124,7 +124,7 @@ def _said_by_still(document: LectureDocument) -> dict[str, str]:
     """Honour the declared Section.still_id link rather than list position.
 
     Sections that share a still_id are joined in document order so no Said is
-    dropped; `section_problems` reports the duplication.
+    dropped; `pairing_problems` reports the duplication.
     """
     said: dict[str, str] = {}
     for section in document.sections:
