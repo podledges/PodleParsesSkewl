@@ -162,11 +162,12 @@ def parse_json_transcript(text: str) -> list[Cue]:
     for position, item in enumerate(raw_cues):
         if not isinstance(item, dict):
             raise PpsError(f"JSON cue {position} must be an object")
+        body = cue_text(item.get("text", ""), f"JSON cue {position} text")
+        if not body:
+            continue
         start = _json_seconds(item, "start_seconds", "start")
         end = _json_seconds(item, "end_seconds", "end")
-        body = cue_text(item.get("text", ""), f"JSON cue {position} text")
-        if body:
-            cues.append(Cue(start_seconds=start, end_seconds=end, text=body))
+        cues.append(Cue(start_seconds=start, end_seconds=end, text=body))
     return cues
 
 

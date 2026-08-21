@@ -119,9 +119,9 @@ class CaptionTests(unittest.TestCase):
     def test_a_null_text_cue_is_skipped_like_an_absent_one(self) -> None:
         body = (
             '[{"start": 1, "end": 2, "text": "Only this was said."},'
-            ' {"start": 3, "end": 4, "text": null},'
-            ' {"start": 5, "end": 6},'
-            ' {"start": 7, "end": 8, "text": "  "}]'
+            ' {"start": "not a time", "text": null},'
+            ' {"start": 5, "end": "also bad"},'
+            ' {"text": "  "}]'
         )
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "lecture.json"
