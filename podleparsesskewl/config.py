@@ -39,6 +39,7 @@ def load_config(
         configured = _config_lectures_dir(config_path)
         if configured is not None:
             return _config_for(configured, f"config:{config_path}")
+        return _config_for(DEFAULT_LECTURES_DIR, f"config:{config_path}")
     env = os.environ.get(ENV_LECTURES_DIR)
     if env:
         return _config_for(env, "env")

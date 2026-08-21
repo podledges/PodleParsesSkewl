@@ -132,15 +132,22 @@ def _transcriber_status() -> ToolStatus:
             path=None,
             detail="openai-whisper (Python)",
         )
-    for binary in ("whisper-ctranslate2", "whisper"):
-        path = shutil.which(binary)
-        if path:
-            return ToolStatus(
-                name="transcriber",
-                found=True,
-                path=Path(path),
-                detail=f"CLI {binary}",
-            )
+    whisper_cli = shutil.which("whisper")
+    if whisper_cli:
+        return ToolStatus(
+            name="transcriber",
+            found=True,
+            path=Path(whisper_cli),
+            detail="CLI whisper",
+        )
+    ctranslate2_cli = shutil.which("whisper-ctranslate2")
+    if ctranslate2_cli:
+        return ToolStatus(
+            name="transcriber",
+            found=False,
+            path=Path(ctranslate2_cli),
+            detail="whisper-ctranslate2 needs --whisper-model-path and cannot be auto-used by doctor",
+        )
     return ToolStatus(
         name="transcriber",
         found=False,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,15 +63,16 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.lectures_dir, chosen)
         self.assertIn("config:", config.lectures_dir_source)
 
-    def test_config_file_without_lectures_dir_falls_back_to_the_environment(self) -> None:
+    def test_explicit_config_file_without_lectures_dir_ignores_the_environment(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             folder = Path(raw)
             config_file = folder / "my.toml"
             config_file.write_text("# nothing set here\n", encoding="utf-8")
             with mock.patch.dict(os.environ, {"PODLEPARSESSKEWL_LECTURES_DIR": raw}):
-                config = load_config(config_path=config_file)
-        self.assertEqual(config.lectures_dir, Path(raw))
-        self.assertEqual(config.lectures_dir_source, "env")
+                with mock.patch("podleparsesskewl.config.running_under_wsl", return_value=False):
+                    config = load_config(config_path=config_file)
+        self.assertEqual(config.lectures_dir, Path(DEFAULT_LECTURES_DIR))
+        self.assertIn("config:", config.lectures_dir_source)
 
     def test_windows_lecture_dir_is_translated_under_wsl(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -182,6 +184,21 @@ class DoctorTests(unittest.TestCase):
                                 env = inspect_environment()
         self.assertTrue(env.ffmpeg.found)
         self.assertEqual(env.ffmpeg.path, binary)
+
+    def test_doctor_does_not_report_only_ctranslate2_cli_as_ready(self) -> None:
+        def which(binary: str) -> str | None:
+            if binary == "whisper-ctranslate2":
+                return "/bin/whisper-ctranslate2"
+            return None
+
+        with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+            with mock.patch("podleparsesskewl.deps.shutil.which", side_effect=which):
+                env = inspect_environment()
+
+        self.assertFalse(env.transcriber.found)
+        self.assertFalse(env.can_transcribe_audio)
+        self.assertEqual(env.transcriber.path, Path("/bin/whisper-ctranslate2"))
+        self.assertIn("missing", format_doctor(env))
 
     def test_parse_without_recording_explains_usage(self) -> None:
         code = main(["parse"])
