@@ -109,7 +109,7 @@ End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain 
 
 ### Transcripts
 
-The program looks next to the MP4 for `lecture.srt`, `lecture.vtt`, or `lecture.json`. If one is present, it is used and audio is not transcribed. If none is present, a local engine is required.
+The program looks next to the MP4 for a transcript sidecar with the same stem, such as `lecture.srt`, `lecture.vtt`, or `lecture.json` beside `lecture.mp4`. If one is present, it is used and audio is not transcribed. If none is present, a local engine is required.
 
 A JSON sidecar must be a list of cues, or an object holding a `cues` or `segments` list, where each cue has `start`/`end` (seconds or `HH:MM:SS.mmm`) and `text`.
 
