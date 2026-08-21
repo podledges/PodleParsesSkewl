@@ -261,6 +261,43 @@ class TranscribeTests(unittest.TestCase):
         self.assertEqual([cue.text for cue in transcript.cues], ["Hello"])
         self.assertIn(str(model_path), command)
 
+    def test_load_transcript_allows_explicit_model_path_with_only_ctranslate2(self) -> None:
+        env = Mock()
+        env.can_transcribe_audio = False
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"")
+            model_path = folder / "local-model"
+            model_path.mkdir()
+
+            def run_cli(command, check, capture_output, text):
+                (folder / "audio.json").write_text(
+                    json.dumps({"segments": [{"start": 1.0, "end": 2.0, "text": " Hello "}]}),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch(
+                "podleparsesskewl.transcribe.extract_audio_wav",
+                return_value=folder / "audio.wav",
+            ) as extract:
+                with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+                    with mock.patch("podleparsesskewl.transcribe.shutil.which") as which:
+                        which.side_effect = _only_ctranslate2
+                        with mock.patch(
+                            "podleparsesskewl.transcribe.subprocess.run",
+                            side_effect=run_cli,
+                        ):
+                            transcript = load_transcript(
+                                recording,
+                                env,
+                                work_dir=folder,
+                                transcription=TranscriptionOptions(model_path=model_path),
+                            )
+        extract.assert_called_once_with(recording, folder / "audio.wav", env)
+        self.assertEqual([cue.text for cue in transcript.cues], ["Hello"])
+
     def test_explicit_sidecar_path(self) -> None:
         env = Mock()
         env.can_transcribe_audio = False

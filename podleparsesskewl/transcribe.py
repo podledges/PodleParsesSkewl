@@ -65,7 +65,8 @@ def load_transcript(
             "transcribe, so supply a .srt, .vtt, or .json caption sidecar next to it "
             "or with --transcript."
         )
-    if not env.can_transcribe_audio:
+    options = transcription or TranscriptionOptions()
+    if not env.can_transcribe_audio and options.model_path is None:
         raise PpsError(
             "no caption sidecar found and no local transcription engine is available. "
             "Place a .srt, .vtt, or .json file next to the Recording, or install "
@@ -74,7 +75,7 @@ def load_transcript(
     if work_dir is None:
         raise PpsError("work directory is required to transcribe audio")
     wav = extract_audio_wav(recording, work_dir / "audio.wav", env)
-    return transcribe_wav(wav, env, transcription=transcription)
+    return transcribe_wav(wav, env, transcription=options)
 
 
 def transcribe_wav(
