@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 import tempfile
 import types
@@ -18,6 +20,12 @@ def _faster_whisper_module(model) -> types.ModuleType:
     module = types.ModuleType("faster_whisper")
     module.WhisperModel = Mock(return_value=model)
     return module
+
+
+def _only_ctranslate2(binary: str) -> str | None:
+    if binary == "whisper-ctranslate2":
+        return "/bin/whisper-ctranslate2"
+    return None
 
 
 class TranscribeTests(unittest.TestCase):
@@ -203,6 +211,55 @@ class TranscribeTests(unittest.TestCase):
         message = str(raised.exception)
         self.assertIn("does not exist", message)
         self.assertIn(str(missing), message)
+
+    def test_ctranslate2_cli_named_model_flow_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+                with mock.patch("podleparsesskewl.transcribe.shutil.which") as which:
+                    which.side_effect = _only_ctranslate2
+                    with mock.patch("podleparsesskewl.transcribe.subprocess.run") as run:
+                        with self.assertRaises(PpsError) as raised:
+                            transcribe_wav(wav, Mock())
+        message = str(raised.exception)
+        self.assertIn("whisper-ctranslate2", message)
+        self.assertIn("--whisper-model-path", message)
+        run.assert_not_called()
+
+    def test_ctranslate2_cli_accepts_explicit_local_model_path(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            wav = folder / "audio.wav"
+            wav.write_bytes(b"")
+            model_path = folder / "local-model"
+            model_path.mkdir()
+
+            def run_cli(command, check, capture_output, text):
+                (folder / "audio.json").write_text(
+                    json.dumps(
+                        {"segments": [{"start": 1.0, "end": 2.0, "text": " Hello "}]}
+                    ),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.dict(sys.modules, {"faster_whisper": None, "whisper": None}):
+                with mock.patch("podleparsesskewl.transcribe.shutil.which") as which:
+                    which.side_effect = _only_ctranslate2
+                    with mock.patch(
+                        "podleparsesskewl.transcribe.subprocess.run",
+                        side_effect=run_cli,
+                    ) as run:
+                        transcript = transcribe_wav(
+                            wav,
+                            Mock(),
+                            transcription=TranscriptionOptions(model_path=model_path),
+                        )
+        command = run.call_args.args[0]
+        self.assertEqual(transcript.source, f"audio:whisper-ctranslate2:{model_path}")
+        self.assertEqual([cue.text for cue in transcript.cues], ["Hello"])
+        self.assertIn(str(model_path), command)
 
     def test_explicit_sidecar_path(self) -> None:
         env = Mock()

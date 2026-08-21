@@ -109,10 +109,21 @@ def _run_engine(wav: Path, options: TranscriptionOptions) -> Transcript:
     if whisper is not None:
         return _openai_whisper(wav, whisper, options)
 
+    skipped_ctranslate2 = False
     for binary in ("whisper-ctranslate2", "whisper"):
         path = shutil.which(binary)
-        if path:
-            return _whisper_cli(wav, path, binary, options)
+        if not path:
+            continue
+        if binary == "whisper-ctranslate2" and options.model_path is None:
+            skipped_ctranslate2 = True
+            continue
+        return _whisper_cli(wav, path, binary, options)
+    if skipped_ctranslate2:
+        raise PpsError(
+            "whisper-ctranslate2 CLI can only be used with --whisper-model-path. "
+            "Named model transcription requires faster-whisper or openai-whisper so "
+            "downloads and cache-only runs stay under the configured ./models folder."
+        )
     raise PpsError(
         "a transcription engine was reported available but could not be used. "
         "Install faster-whisper, or supply a caption sidecar."
