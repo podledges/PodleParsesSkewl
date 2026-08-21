@@ -9,7 +9,7 @@ from unittest import mock
 from unittest.mock import Mock
 
 from podleparsesskewl.errors import PpsError
-from podleparsesskewl.transcribe import load_transcript, transcribe_wav
+from podleparsesskewl.transcribe import TranscriptionOptions, load_transcript, transcribe_wav
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -135,6 +135,64 @@ class TranscribeTests(unittest.TestCase):
         self.assertEqual(transcript.source, "audio:faster-whisper:base")
         self.assertEqual(transcript.cues[0].text, "Hello class.")
         self.assertEqual(transcript.cues[0].start_seconds, 1.0)
+
+    def test_faster_whisper_uses_configured_local_model_cache(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text="Hello class.")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            wav = folder / "audio.wav"
+            wav.write_bytes(b"")
+            cache = folder / "localdata"
+            module = _faster_whisper_module(model)
+            with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+                transcript = transcribe_wav(
+                    wav,
+                    Mock(),
+                    transcription=TranscriptionOptions(
+                        model="small",
+                        local_files_root=cache,
+                        offline=True,
+                    ),
+                )
+        module.WhisperModel.assert_called_once_with(
+            "small",
+            device="cpu",
+            compute_type="int8",
+            download_root=str(cache),
+            local_files_only=True,
+        )
+        self.assertEqual(transcript.source, "audio:faster-whisper:small")
+
+    def test_explicit_model_path_is_passed_without_creating_cache(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text="Hello class.")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            wav = folder / "audio.wav"
+            wav.write_bytes(b"")
+            model_path = folder / "models" / "base"
+            cache = folder / "localdata"
+            module = _faster_whisper_module(model)
+            with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+                transcribe_wav(
+                    wav,
+                    Mock(),
+                    transcription=TranscriptionOptions(
+                        model_path=model_path,
+                        local_files_root=cache,
+                    ),
+                )
+        module.WhisperModel.assert_called_once_with(
+            str(model_path),
+            device="cpu",
+            compute_type="int8",
+            download_root=str(cache),
+            local_files_only=False,
+        )
+        self.assertFalse(cache.exists())
 
     def test_explicit_sidecar_path(self) -> None:
         env = Mock()

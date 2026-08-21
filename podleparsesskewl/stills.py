@@ -132,7 +132,7 @@ def segment_stills(
                     stable = False
                     break
                 hold_index += 1
-            if stable:
+            if stable and (hold_index < len(frames) or duration_seconds >= hold_until):
                 starts.append((current_start, current_rep))
                 current_start = frame.time_seconds
                 current_samples = new_samples

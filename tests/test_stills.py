@@ -67,6 +67,13 @@ class StillSegmentationTests(unittest.TestCase):
         self.assertEqual(len(intervals), 1)
         self.assertEqual(intervals[0].end_seconds, 8.0)
 
+    def test_last_second_flicker_does_not_become_a_still(self) -> None:
+        frames = [_frame(float(i), slide=20, webcam=20) for i in range(5)]
+        frames.append(_frame(5.0, slide=200, webcam=200))
+        intervals = segment_stills(frames, duration_seconds=6.0, min_hold_seconds=1.5)
+        self.assertEqual(len(intervals), 1)
+        self.assertEqual(intervals[0].end_seconds, 6.0)
+
     def test_text_heavy_full_slide_swap_splits_at_defaults(self) -> None:
         first = _white_slide(seed=1, bullets=4)
         second = _white_slide(seed=2, bullets=4)

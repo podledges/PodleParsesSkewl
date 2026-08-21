@@ -26,6 +26,7 @@ from podleparsesskewl.pipeline import (
 )
 from podleparsesskewl.report import pairing_problems, write_plain_views
 from podleparsesskewl.stills import DEFAULT_CHANGE_RATIO, DEFAULT_MIN_HOLD_SECONDS, DEFAULT_SAMPLE_FPS
+from podleparsesskewl.transcribe import DEFAULT_LOCAL_FILES_ROOT, DEFAULT_WHISPER_MODEL, TranscriptionOptions
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,6 +104,27 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="keep this run's intermediate ffmpeg files in its _work-* folder under the output directory",
     )
+    parse.add_argument(
+        "--whisper-model",
+        default=DEFAULT_WHISPER_MODEL,
+        help="Whisper model size/name for audio transcription (tiny, base, small, medium, large; default: base)",
+    )
+    parse.add_argument(
+        "--whisper-model-path",
+        type=Path,
+        help="explicit local Whisper model path instead of a named model download/cache",
+    )
+    parse.add_argument(
+        "--local-files-root",
+        type=Path,
+        default=DEFAULT_LOCAL_FILES_ROOT,
+        help="local cache root for downloaded Whisper models (default: ./localdata)",
+    )
+    parse.add_argument(
+        "--offline-transcription",
+        action="store_true",
+        help="use cached/local Whisper model files only; never download a model",
+    )
 
     render = sub.add_parser("render", help="rebuild plain HTML/Markdown from lecture.json")
     render.add_argument("document", type=Path, help="path to lecture.json")
@@ -175,6 +197,12 @@ def _cmd_parse(args: argparse.Namespace) -> int:
             change_ratio=args.change_ratio,
             min_hold_seconds=args.min_hold_seconds,
             keep_work=args.keep_work,
+            transcription=TranscriptionOptions(
+                model=args.whisper_model,
+                model_path=args.whisper_model_path,
+                local_files_root=args.local_files_root,
+                offline=args.offline_transcription,
+            ),
         ),
     )
     print(f"Document  {result.document_path}")

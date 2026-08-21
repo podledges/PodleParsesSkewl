@@ -212,7 +212,12 @@ def _as_count(value: Any, field: str) -> int:
             f"Lecture Document field {field} must be a whole number, got {_kind(value)}"
         )
     try:
-        number = int(value)
+        if isinstance(value, float):
+            if not math.isfinite(value) or not value.is_integer():
+                raise ValueError
+            number = int(value)
+        else:
+            number = int(value)
     except (ValueError, OverflowError) as exc:
         raise PpsError(
             f"Lecture Document field {field} is not a whole number: {value!r}"

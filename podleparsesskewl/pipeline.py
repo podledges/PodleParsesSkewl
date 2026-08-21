@@ -21,7 +21,7 @@ from podleparsesskewl.stills import (
     FrameSignature,
     segment_stills,
 )
-from podleparsesskewl.transcribe import load_transcript
+from podleparsesskewl.transcribe import TranscriptionOptions, load_transcript
 
 WORK_PREFIX = "_work-"
 
@@ -35,6 +35,7 @@ class ParseOptions:
     change_ratio: float = DEFAULT_CHANGE_RATIO
     min_hold_seconds: float = DEFAULT_MIN_HOLD_SECONDS
     keep_work: bool = False
+    transcription: TranscriptionOptions = TranscriptionOptions()
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ def parse_recording(
             sidecar=options.sidecar,
             work_dir=work_dir,
             has_audio=probe.has_audio,
+            transcription=options.transcription,
         )
         frames = sample_signatures(
             recording,

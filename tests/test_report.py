@@ -205,6 +205,17 @@ class ReportTests(unittest.TestCase):
                     LectureDocument.from_json_dict(candidate)
         self.assertEqual(payload["title"], "Sample Lecture")
 
+    def test_fractional_count_fields_are_user_errors(self) -> None:
+        from podleparsesskewl.errors import PpsError
+
+        payload = _document().to_json_dict()
+        for field in ("stills.0.index", "source.width", "sections.0.cue_indexes.0"):
+            with self.subTest(field=field):
+                candidate = json.loads(json.dumps(payload))
+                _assign(candidate, field, 1.9)
+                with self.assertRaises(PpsError):
+                    LectureDocument.from_json_dict(candidate)
+
     def test_write_document_refuses_non_finite_numbers(self) -> None:
         from podleparsesskewl.errors import PpsError
 

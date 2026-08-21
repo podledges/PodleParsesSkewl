@@ -2,7 +2,7 @@
 
 Review reconstruction for lecture recordings. One MP4 in; a structured Lecture Document out that pairs **what was said** with **what was shown**.
 
-The program is a standalone CLI. It does not call the network. A project skill, `/ezLectures`, can turn the same Document into a more aesthetic HTML view.
+The program is a standalone CLI. Sidecar-based parsing is fully offline. Audio transcription runs locally; the default named Whisper model may be downloaded once, then reused from local disk. A project skill, `/ezLectures`, can turn the same Document into a more aesthetic HTML view.
 
 ## What you get
 
@@ -64,7 +64,16 @@ If the MP4 has no caption sidecar, install a local engine:
 python3 -m pip install -e ".[transcribe]"   # faster-whisper
 ```
 
-The first audio run downloads a local Whisper model. Nothing is uploaded.
+The first audio run with the default named model (`base`) may download the model into `./localdata`. That cache is just model files kept on local disk, so later runs - including batch or multiple-file runs - reuse them and do not download again. Caching does not make transcription slower except for normal disk access. Lecture files are never uploaded.
+
+Model recommendations:
+
+- `tiny`: fastest and smallest, least accurate.
+- `base`: default balance for quick review reconstruction.
+- `small`: better accuracy when you can wait longer.
+- `medium` or larger: best local accuracy, but much slower and larger.
+
+Use `--whisper-model <tiny|base|small|medium|large...>` to choose a named model, `--local-files-root <path>` to choose where downloaded model files are stored, `--offline-transcription` to require cache-only operation, or `--whisper-model-path <path>` to use an explicit local model path. After a model is present in `localdata` or your chosen local-files root, `--offline-transcription` performs audio transcription without network access.
 
 ## Usage
 
@@ -79,6 +88,11 @@ python3 -m podleparsesskewl parse path/to/lecture.mp4
 python3 -m podleparsesskewl parse path/to/lecture.mp4 \
   -o ./out/lecture \
   --transcript path/to/lecture.srt
+
+# transcribe audio with cached/local model files only
+python3 -m podleparsesskewl parse path/to/lecture.mp4 \
+  --offline-transcription \
+  --local-files-root ./localdata
 
 # rebuild the plain HTML from an existing Document
 python3 -m podleparsesskewl render ./out/lecture/lecture.json
