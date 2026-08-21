@@ -112,13 +112,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parse.add_argument(
         "--whisper-model-path",
         type=Path,
-        help="explicit local Whisper model path instead of a named model download/cache",
+        help="explicit existing local Whisper model file or directory instead of a named model download/cache",
     )
     parse.add_argument(
         "--local-files-root",
         type=Path,
         default=DEFAULT_LOCAL_FILES_ROOT,
-        help="local cache root for downloaded Whisper models (default: ./localdata)",
+        help="local folder for downloaded Whisper models (default: ./models)",
     )
     parse.add_argument(
         "--offline-transcription",

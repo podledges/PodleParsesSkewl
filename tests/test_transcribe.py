@@ -144,7 +144,7 @@ class TranscribeTests(unittest.TestCase):
             folder = Path(raw)
             wav = folder / "audio.wav"
             wav.write_bytes(b"")
-            cache = folder / "localdata"
+            cache = folder / "models"
             module = _faster_whisper_module(model)
             with mock.patch.dict(sys.modules, {"faster_whisper": module}):
                 transcript = transcribe_wav(
@@ -173,8 +173,9 @@ class TranscribeTests(unittest.TestCase):
             folder = Path(raw)
             wav = folder / "audio.wav"
             wav.write_bytes(b"")
-            model_path = folder / "models" / "base"
-            cache = folder / "localdata"
+            model_path = folder / "existing-model"
+            model_path.mkdir()
+            cache = folder / "models"
             module = _faster_whisper_module(model)
             with mock.patch.dict(sys.modules, {"faster_whisper": module}):
                 transcribe_wav(
@@ -193,6 +194,15 @@ class TranscribeTests(unittest.TestCase):
             local_files_only=False,
         )
         self.assertFalse(cache.exists())
+
+    def test_missing_explicit_model_path_is_rejected_before_engine_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            missing = Path(raw) / "base"
+            with self.assertRaises(PpsError) as raised:
+                TranscriptionOptions(model_path=missing)
+        message = str(raised.exception)
+        self.assertIn("does not exist", message)
+        self.assertIn(str(missing), message)
 
     def test_explicit_sidecar_path(self) -> None:
         env = Mock()

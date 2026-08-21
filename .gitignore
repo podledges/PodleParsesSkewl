@@ -8,7 +8,7 @@ build/
 .pytest_cache/
 .mypy_cache/
 podleparsesskewl.toml
-localdata/
+models/
 *.lecture/
 _work*/
 .output/

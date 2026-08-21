@@ -17,7 +17,7 @@ from podleparsesskewl.errors import PpsError
 from podleparsesskewl.media import extract_audio_wav
 
 DEFAULT_WHISPER_MODEL = "base"
-DEFAULT_LOCAL_FILES_ROOT = Path("localdata")
+DEFAULT_LOCAL_FILES_ROOT = Path("models")
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,17 @@ class TranscriptionOptions:
     model_path: Path | None = None
     local_files_root: Path = DEFAULT_LOCAL_FILES_ROOT
     offline: bool = False
+
+    def __post_init__(self) -> None:
+        if self.model_path is not None:
+            model_path = Path(self.model_path)
+            if not model_path.exists():
+                raise PpsError(
+                    f"explicit Whisper model path does not exist: {model_path}. "
+                    "Pass a local file or directory, or use --whisper-model for named model downloads."
+                )
+            object.__setattr__(self, "model_path", model_path)
+        object.__setattr__(self, "local_files_root", Path(self.local_files_root))
 
     @property
     def model_reference(self) -> str:
