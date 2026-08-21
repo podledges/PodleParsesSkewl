@@ -75,6 +75,8 @@ Model recommendations:
 
 Use `--whisper-model <tiny|base|small|medium|large...>` to choose a named model, `--local-files-root <path>` to choose where downloaded model files are stored, `--offline-transcription` to require cache-only operation, or `--whisper-model-path <path>` to use an explicit existing local model file or directory. After a model is present in `./models` or your chosen local-files root, `--offline-transcription` performs audio transcription without network access.
 
+`./models` is the project-visible model location. It is ignored by git and can hold real model files, a symlink to another model cache, or symlinked entries that point at model files or directories you already have elsewhere. For example, once you find an existing transcription-model folder, you can keep this project local-first while reusing it with `ln -s /path/to/transcription-model ./models` or by linking selected files inside `./models`. If you do not want symlinks, pass the existing location directly with `--local-files-root /path/to/transcription-model` or use `--whisper-model-path /path/to/model-file-or-directory`.
+
 ## Usage
 
 ```bash
