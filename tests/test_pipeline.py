@@ -308,7 +308,10 @@ class PipelineTests(unittest.TestCase):
                 parse_recording(recording, ParseOptions(output_dir=folder / "out"), env=env)
             self.assertIn("ffmpeg", str(raised.exception).lower())
 
-    @unittest.skipUnless(_ffmpeg(), "ffmpeg not on PATH")
+    @unittest.skipUnless(
+        _ffmpeg(),
+        "ffmpeg not on PATH; run via nix-shell --run 'python3 -m unittest ...' (see README Tests)",
+    )
     def test_parse_synthetic_mp4_with_sidecar(self) -> None:
         ffmpeg = _ffmpeg()
         assert ffmpeg is not None

@@ -7,10 +7,12 @@ Standalone lecture review-reconstruction tool. Domain language lives in `CONTEXT
 ```bash
 python3 -m podleparsesskewl doctor
 python3 -m podleparsesskewl parse path/to/lecture.mp4
-python3 -m unittest discover -s tests -v
+nix-shell --run 'python3 -m unittest discover -s tests -v'
 ```
 
 `doctor` is the source of truth for ffmpeg / transcriber / lecture-directory reachability. Setup and the Windows lecture directory are documented in `README.md`.
+
+CI (GitHub Actions) is the remote automated check machine. Do not treat CI green as the real MP4 media test. Run the suite locally with ffmpeg from `shell.nix` so the synthetic MP4 parse actually executes.
 
 ## Skills
 

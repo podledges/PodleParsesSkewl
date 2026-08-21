@@ -180,11 +180,19 @@ The canonical skill file is `.agents/skills/ezLectures/SKILL.md` - edit that one
 
 ## Tests
 
+CI is GitHub Actions: a remote machine that installs ffmpeg and runs `python -m unittest` on every push and pull request. That is the automated check. It is not the only real media test.
+
+The MP4 end-to-end parse (synthetic two-Still recording) must also be run locally, with ffmpeg/ffprobe actually present. On this NixOS/WSL repo that means the project `shell.nix`, not "CI was green so the media path is fine":
+
 ```bash
+# preferred on Nix: ffmpeg from shell.nix, including the MP4 E2E
+nix-shell --run 'python3 -m unittest discover -s tests -v'
+
+# if ffmpeg is already on PATH
 python3 -m unittest discover -s tests -v
 ```
 
-Core tests use deterministic fixtures (captions, synthetic frame signatures, Document rendering). If `ffmpeg` is on `PATH`, an end-to-end test builds a tiny two-Still MP4 and parses it.
+Core tests use deterministic fixtures (captions, synthetic frame signatures, Document rendering). The MP4 E2E builds a tiny two-Still file and parses it; it is skipped only when ffmpeg is missing from that process, which is a local-setup gap, not a substitute for running the media test.
 
 ## Domain language
 
