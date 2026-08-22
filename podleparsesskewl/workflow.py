@@ -49,7 +49,9 @@ def build_notes_argv(
         args += ["--transcript", transcript]
     if archive_dir:
         args += ["--archive-dir", archive_dir]
-    if not archive:
+    if archive:
+        args.append("--archive")
+    else:
         args.append("--no-archive")
     return args
 

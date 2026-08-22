@@ -10,6 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from tkinter import filedialog, messagebox, ttk
 
 from podleparsesskewl.cli import main as cli_main
+from podleparsesskewl.config import load_config
 from podleparsesskewl.deps import inspect_environment
 from podleparsesskewl.workflow import (
     build_notes_argv,
@@ -33,8 +34,9 @@ class Launcher(tk.Tk):
         self._recording = tk.StringVar()
         self._output = tk.StringVar()
         self._transcript = tk.StringVar()
+        config = load_config()
         self._archive = tk.StringVar(value=suggested_archive_path())
-        self._archive_inputs = tk.BooleanVar(value=True)
+        self._archive_inputs = tk.BooleanVar(value=config.archive_after_notes)
         self._status = tk.StringVar(value="Choose an MP4 recording to begin.")
         self._busy = False
         self._build()

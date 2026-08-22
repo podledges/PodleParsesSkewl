@@ -36,8 +36,13 @@ _PITFALL = re.compile(
 _STEP = re.compile(r"\b(first|then|next|finally|step \d+)\b", re.IGNORECASE)
 
 _STYLE = """
+:root { color-scheme: light; }
 body { font-family: Georgia, "Iowan Old Style", Palatino, serif; background: #f6f1e8; color: #1a1714;
-  max-width: 40rem; margin: 2.2rem auto; padding: 0 1.2rem 3rem; line-height: 1.55; }
+  margin: 0; line-height: 1.55; }
+.shell { max-width: 40rem; margin: 2.2rem auto; padding: 0 1.2rem 3rem; }
+.hero, .panel, .topic { background: #fffaf1; border: 1px solid #ded4c6; box-shadow: 0 10px 28px rgba(51, 38, 25, 0.06); }
+.hero { padding: 1.35rem 1.45rem; margin-bottom: 1rem; }
+.panel, .topic { padding: 1.1rem 1.2rem; margin: 1rem 0; }
 .eyebrow, .when, .meta, th, td, .label { font-family: "Segoe UI", system-ui, sans-serif; }
 .eyebrow { letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.72rem; color: #7a6a58; margin: 0; }
 h1 { font-size: 1.85rem; margin: 0.35rem 0 0.6rem; font-weight: 600; }
@@ -46,15 +51,14 @@ h3 { font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.82rem; letter-
   text-transform: uppercase; color: #7a6a58; margin: 1.1rem 0 0.35rem; font-weight: 600; }
 .meta, .when { color: #5c5348; font-size: 0.88rem; }
 img.shown { width: 100%; height: auto; display: block; border: 1px solid #c9c0b4;
-  box-shadow: 0 1px 4px rgba(40, 30, 20, 0.08); background: #efe8dc; margin: 0.6rem 0; }
-hr { border: none; border-top: 1px solid #d8cfc2; margin: 1.8rem 0; }
-.topic { margin: 1.4rem 0; }
+  box-shadow: 0 2px 8px rgba(40, 30, 20, 0.12); background: #efe8dc; margin: 0.6rem 0; }
+hr { border: none; border-top: 1px solid #d8cfc2; margin: 1.35rem 0; }
 .nutshell { font-size: 1.05rem; }
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.6rem 0 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.6rem 0 0.2rem; }
 th, td { text-align: left; padding: 0.35rem 0.45rem; border-bottom: 1px solid #e0d6c8; vertical-align: top; }
 th { color: #7a6a58; font-weight: 600; }
 pre.diagram { font-family: ui-monospace, Consolas, monospace; font-size: 0.82rem; white-space: pre-wrap;
-  background: #efe8dc; padding: 0.75rem 0.85rem; }
+  background: #efe8dc; border: 1px solid #d8cfc2; padding: 0.75rem 0.85rem; }
 .said { white-space: pre-wrap; }
 """.strip()
 
@@ -88,27 +92,37 @@ def render_present(document: LectureDocument) -> str:
         f"<style>{_STYLE}</style>",
         "</head>",
         "<body>",
-        '<p class="eyebrow">Teaching notes</p>',
+        '<main class="shell">',
+        '<header class="hero">',
+        '<p class="eyebrow">PodleParsesSkewl Teaching Report</p>',
         f"<h1>{html.escape(document.title)}</h1>",
         (
             f'<p class="meta">Duration {html.escape(format_clock(document.source.duration_seconds))}'
             f" · {len(topics)} topics · Transcript {html.escape(document.source.transcript_source)}</p>"
         ),
+        "</header>",
+        '<section class="panel">',
         "<h2>Executive summary</h2>",
         _executive_summary(topics),
+        "</section>",
+        '<section class="panel">',
         "<h2>Key concepts</h2>",
         _key_concepts(topics),
+        "</section>",
+        '<section class="panel">',
         "<h2>Timeline tied to Shown</h2>",
         _coverage_table(topics),
+        "</section>",
     ]
     for index, topic in enumerate(topics, start=1):
         if index > 1:
             parts.append("<hr>")
         parts.append(_render_topic(index, topic))
-    parts.append("<hr>")
+    parts.append('<section class="panel">')
     parts.append("<h2>Review prompts</h2>")
     parts.append(_review_prompts(topics))
-    parts.extend(["</body>", "</html>", ""])
+    parts.append("</section>")
+    parts.extend(["</main>", "</body>", "</html>", ""])
     return "\n".join(parts)
 
 

@@ -113,7 +113,13 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="parent folder for unique per-run archive directories",
     )
-    notes.add_argument(
+    archive_choice = notes.add_mutually_exclusive_group()
+    archive_choice.add_argument(
+        "--archive",
+        action="store_true",
+        help="move the Recording into the archive after notes, overriding config",
+    )
+    archive_choice.add_argument(
         "--no-archive",
         action="store_true",
         help="leave the Recording in place after notes are written",
@@ -284,7 +290,7 @@ def _cmd_notes(args: argparse.Namespace) -> int:
         output=output,
         config=config,
         options=_parse_options(args, output),
-        archive=False if args.no_archive else None,
+        archive=_archive_choice(args),
         archive_dir=archive_dir,
     )
     _print_parse(result.parse)
@@ -322,6 +328,14 @@ def _cmd_render(args: argparse.Namespace) -> int:
     print(f"HTML      {html_path}")
     print(f"Markdown  {md_path}")
     return 0
+
+
+def _archive_choice(args: argparse.Namespace) -> bool | None:
+    if args.archive:
+        return True
+    if args.no_archive:
+        return False
+    return None
 
 
 def _parse_options(args: argparse.Namespace, output: Path) -> ParseOptions:
