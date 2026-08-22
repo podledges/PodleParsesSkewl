@@ -59,7 +59,7 @@ pps doctor
 
 ### Windows executable release
 
-Maintainers can build the console executable on a Windows machine with Python 3.11+ and PowerShell:
+Maintainers can build the Windows release artifacts on a Windows machine with Python 3.11+ and PowerShell:
 
 ```powershell
 .\scripts\build-windows.ps1
