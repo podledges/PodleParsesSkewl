@@ -65,6 +65,7 @@ class PresentResult:
     document_path: Path
     present_path: Path
     copy_problems: tuple[str, ...] = ()
+    pairing_problems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

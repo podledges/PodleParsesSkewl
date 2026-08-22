@@ -11,6 +11,7 @@ from podleparsesskewl.config import AppConfig, lectures_dir_accessible, load_con
 from podleparsesskewl.deps import Environment
 from podleparsesskewl.errors import PpsError
 from podleparsesskewl.present import PresentResult, write_present
+from podleparsesskewl.report import pairing_problems
 from podleparsesskewl.pipeline import (
     ParseOptions,
     ParseResult,
@@ -160,12 +161,14 @@ def present_lecture(
     copy_problems: tuple[str, ...] = ()
     if target.resolve() != source.parent.resolve():
         copy_problems = tuple(copy_still_images(document, source.parent, target))
+    problems = tuple(pairing_problems(document))
     present_path = write_present(document, target)
     return PresentResult(
         document=document,
         document_path=source,
         present_path=present_path,
         copy_problems=copy_problems,
+        pairing_problems=problems,
     )
 
 

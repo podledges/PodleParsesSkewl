@@ -269,6 +269,8 @@ def _cmd_present(args: argparse.Namespace) -> int:
     print(f"Stills    {len(result.document.stills)}")
     for problem in result.copy_problems:
         print(f"warning: {problem}", file=sys.stderr)
+    for problem in result.pairing_problems:
+        print(f"warning: {problem}", file=sys.stderr)
     return 0
 
 
@@ -287,6 +289,8 @@ def _cmd_notes(args: argparse.Namespace) -> int:
     )
     _print_parse(result.parse)
     print(f"Present   {result.present.present_path}")
+    for problem in result.present.pairing_problems:
+        print(f"warning: {problem}", file=sys.stderr)
     if result.archive is None:
         print("Archive   skipped")
     else:

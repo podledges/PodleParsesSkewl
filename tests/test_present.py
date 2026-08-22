@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -123,6 +126,27 @@ class PresentReportTests(unittest.TestCase):
     def test_present_missing_document_is_a_user_error(self) -> None:
         code = main(["present", "/definitely/not/a/lecture.json"])
         self.assertEqual(code, 2)
+
+    def test_present_cli_warns_when_section_matches_no_still(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(_document(), folder)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["sections"][0]["still_id"] = "missing-still"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main(["present", str(path)])
+
+            self.assertEqual(code, 0)
+            self.assertTrue((folder / PRESENT_NAME).is_file())
+            self.assertIn("warning:", stderr.getvalue())
+            self.assertIn("missing-still", stderr.getvalue())
+            self.assertNotIn(
+                "A hash table maps keys to values",
+                (folder / PRESENT_NAME).read_text(encoding="utf-8"),
+            )
 
     def test_write_present_creates_the_html_file(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
