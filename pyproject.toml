@@ -18,6 +18,9 @@ transcribe = [
 dev = [
     "pytest>=8.0",
 ]
+build = [
+    "pyinstaller>=6.0",
+]
 
 [project.scripts]
 pps = "podleparsesskewl.cli:main"

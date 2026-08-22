@@ -56,6 +56,24 @@ python3 -m pip install -e .
 pps doctor
 ```
 
+### Windows executable release
+
+Maintainers can build the console executable on a Windows machine with Python 3.11+ and PowerShell:
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+The script creates a local build environment, installs the project and PyInstaller, and writes `dist\pps.exe`. The short smoke test is:
+
+```powershell
+.\dist\pps.exe --version
+```
+
+Build on Windows - PyInstaller does not cross-compile a Windows executable from Linux or macOS. The executable does not include `ffmpeg` or `ffprobe`; install the Windows ffmpeg package separately and put its `bin` directory on `PATH` (or set `PODLEPARSESSKEWL_FFMPEG` and `PODLEPARSESSKEWL_FFPROBE`). Run `.\dist\pps.exe doctor` to verify the setup. Whisper model files and lecture data are also intentionally external and remain in local paths such as `models\` and the configured lecture directory.
+
+The release build includes the core CLI and supports caption sidecars without additional Python installation. Audio transcription still requires a separately installed local transcription engine and its model cache; it is not bundled by this build.
+
 ### Optional local transcription
 
 If the MP4 has no caption sidecar, install a local engine:
