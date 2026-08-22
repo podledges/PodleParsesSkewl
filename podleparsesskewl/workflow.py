@@ -157,10 +157,16 @@ def present_lecture(
     source = resolve_document_path(document_path)
     document = load_document(source)
     target = output_dir if output_dir is not None else source.parent
+    copy_problems: tuple[str, ...] = ()
     if target.resolve() != source.parent.resolve():
-        copy_still_images(document, source.parent, target)
+        copy_problems = tuple(copy_still_images(document, source.parent, target))
     present_path = write_present(document, target)
-    return PresentResult(document=document, document_path=source, present_path=present_path)
+    return PresentResult(
+        document=document,
+        document_path=source,
+        present_path=present_path,
+        copy_problems=copy_problems,
+    )
 
 
 def parse_and_present(

@@ -458,6 +458,30 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("warning:", stderr.getvalue())
             self.assertIn("still-001", stderr.getvalue())
 
+    def test_present_to_another_folder_warns_about_uncopied_stills(self) -> None:
+        import contextlib
+        import io
+
+        from podleparsesskewl.pipeline import write_document
+        from podleparsesskewl.present import PRESENT_NAME
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            path = write_document(document, source)
+
+            stderr = io.StringIO()
+            target = folder / "elsewhere"
+            with contextlib.redirect_stderr(stderr):
+                code = main(["present", str(path), "-o", str(target)])
+
+            self.assertEqual(code, 0)
+            self.assertTrue((target / PRESENT_NAME).is_file())
+            self.assertIn("warning:", stderr.getvalue())
+            self.assertIn("stills/still-001.png", stderr.getvalue())
+
     def test_render_rejects_a_structurally_invalid_document(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "lecture.json"

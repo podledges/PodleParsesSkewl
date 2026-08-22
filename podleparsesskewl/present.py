@@ -64,6 +64,7 @@ class PresentResult:
     document: LectureDocument
     document_path: Path
     present_path: Path
+    copy_problems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

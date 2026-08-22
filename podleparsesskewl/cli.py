@@ -267,6 +267,8 @@ def _cmd_present(args: argparse.Namespace) -> int:
     print(f"Document  {result.document_path}")
     print(f"Present   {result.present_path}")
     print(f"Stills    {len(result.document.stills)}")
+    for problem in result.copy_problems:
+        print(f"warning: {problem}", file=sys.stderr)
     return 0
 
 
