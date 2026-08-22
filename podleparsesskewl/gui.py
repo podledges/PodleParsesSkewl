@@ -20,7 +20,7 @@ class Launcher(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("PodleParsesSkewl - Lecture review")
+        self.title("PodleSkewl - Lecture review")
         self.geometry("700x470")
         self.minsize(620, 420)
         self.configure(bg="#fff8ed")
@@ -43,7 +43,7 @@ class Launcher(tk.Tk):
 
         outer = ttk.Frame(self, padding=28)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="PodleParsesSkewl", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(outer, text="PodleSkewl", style="Title.TLabel").pack(anchor="w")
         ttk.Label(outer, text="Turn one lecture recording into a reviewable Lecture Document.", style="Hint.TLabel").pack(anchor="w", pady=(2, 24))
         self._path_row(outer, "Recording (MP4)", self._recording, self._choose_recording)
         self._path_row(outer, "Output folder (optional)", self._output, self._choose_output)

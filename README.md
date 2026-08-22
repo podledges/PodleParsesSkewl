@@ -64,7 +64,7 @@ Maintainers can build the console executable on a Windows machine with Python 3.
 .\scripts\build-windows.ps1
 ```
 
-The script creates a local build environment, installs the project and PyInstaller, and writes a copy-ready folder and ZIP at `dist\PodleParsesSkewl-Windows`. The folder contains `pps.exe` (CLI), `pps-gui.exe` (Podle-themed GUI), and the release notes. Extract the ZIP anywhere and double-click `pps-gui.exe`, or use the CLI directly:
+The script creates a local build environment, installs the project and PyInstaller, and writes a Windows installer at `dist\PodleSkewl-Setup.exe`, plus the copy-ready folder and ZIP at `dist\PodleParsesSkewl-Windows`. The folder contains `pps.exe` (CLI), the historical `pps-gui.exe`, and `PodleSkewl.exe` (the installer GUI), plus release notes. The installer creates a Start Menu shortcut, optionally a desktop shortcut, and an entry in Windows Apps for clean uninstall. Extract the ZIP anywhere and double-click `pps-gui.exe`, or use the CLI directly:
 
 ```powershell
 .\dist\PodleParsesSkewl-Windows\pps.exe --version
@@ -73,7 +73,7 @@ The script creates a local build environment, installs the project and PyInstall
 
 Run [WINDOWS-SMOKE-TEST.md](WINDOWS-SMOKE-TEST.md) against the extracted artifact before sharing it.
 
-Build on Windows - PyInstaller does not cross-compile a Windows executable from Linux or macOS. The executable does not include `ffmpeg` or `ffprobe`; install the Windows ffmpeg package separately and put its `bin` directory on `PATH` (or set `PODLEPARSESSKEWL_FFMPEG` and `PODLEPARSESSKEWL_FFPROBE`). Run `.\dist\pps.exe doctor` to verify the setup. Whisper model files and lecture data are also intentionally external and remain in local paths such as `models\` and the configured lecture directory.
+Build on Windows - PyInstaller does not cross-compile a Windows executable from Linux or macOS. The installer is built with Inno Setup 6, which must also be installed on the Windows build machine and available as `ISCC.exe` on `PATH`. To build only the folder/ZIP when Inno Setup is unavailable, use `.\scripts\build-windows.ps1 -SkipInstaller`. The executable and installer do not include `ffmpeg` or `ffprobe`; install a legal Windows ffmpeg package separately and put its `bin` directory on `PATH` (or set `PODLEPARSESSKEWL_FFMPEG` and `PODLEPARSESSKEWL_FFPROBE`). Run `.\dist\pps.exe doctor` to verify the setup. Whisper model files and lecture data are also intentionally external and remain in local paths such as `models\` and the configured lecture directory.
 
 The release build includes the core CLI and Podle-themed GUI, and supports caption sidecars without additional Python installation. Audio transcription still requires a separately installed local transcription engine and its model cache; it is not bundled by this build.
 
