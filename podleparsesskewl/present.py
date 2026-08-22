@@ -92,13 +92,20 @@ def render_present(document: LectureDocument) -> str:
             f'<p class="meta">Duration {html.escape(format_clock(document.source.duration_seconds))}'
             f" · {len(topics)} topics · Transcript {html.escape(document.source.transcript_source)}</p>"
         ),
-        "<h2>Coverage</h2>",
+        "<h2>Executive summary</h2>",
+        _executive_summary(topics),
+        "<h2>Key concepts</h2>",
+        _key_concepts(topics),
+        "<h2>Timeline tied to Shown</h2>",
         _coverage_table(topics),
     ]
     for index, topic in enumerate(topics, start=1):
         if index > 1:
             parts.append("<hr>")
         parts.append(_render_topic(index, topic))
+    parts.append("<hr>")
+    parts.append("<h2>Review prompts</h2>")
+    parts.append(_review_prompts(topics))
     parts.extend(["</body>", "</html>", ""])
     return "\n".join(parts)
 
@@ -133,6 +140,66 @@ def _topics(document: LectureDocument, said_by_still: dict[str, str]) -> list[_T
             continue
         topics.append(_Topic(stills=(still,), said=said))
     return topics or [_Topic(stills=document.stills, said="")]
+
+
+def _executive_summary(topics: list[_Topic]) -> str:
+    sentences: list[str] = []
+    for topic in topics:
+        topic_sentences = _sentences(topic.said)
+        if topic_sentences:
+            sentences.append(topic_sentences[0])
+        if len(sentences) >= 3:
+            break
+    if not sentences:
+        return "<p>The lecture is visual only here; use the Shown timeline below as the grounded outline.</p>"
+    return f"<p>{html.escape(' '.join(sentences))}</p>"
+
+
+def _key_concepts(topics: list[_Topic]) -> str:
+    rows = ["<ul>"]
+    any_concepts = False
+    for index, topic in enumerate(topics, start=1):
+        sentences = _sentences(topic.said)
+        if not sentences:
+            continue
+        any_concepts = True
+        rows.append(
+            f"<li><strong>{html.escape(_heading(topic, index))}</strong> "
+            f"<span class=\"when\">{html.escape(_topic_when(topic))}</span></li>"
+        )
+        if len(rows) >= 7:
+            break
+    if not any_concepts:
+        rows.append("<li>No spoken concepts were captured for these Stills.</li>")
+    rows.append("</ul>")
+    return "\n".join(rows)
+
+
+def _review_prompts(topics: list[_Topic]) -> str:
+    prompts: list[str] = []
+    for index, topic in enumerate(topics, start=1):
+        sentences = _sentences(topic.said)
+        if not sentences:
+            continue
+        prompts.append(
+            f"In your own words, explain {html.escape(_heading(topic, index).lower())} "
+            f"using {html.escape(', '.join(still.id for still in topic.stills))}."
+        )
+        applications = [item for item in sentences if _APPLICATION.search(item)]
+        if applications:
+            prompts.append(
+                "What lecture-given use case makes this idea practical: "
+                f"{html.escape(applications[0])}"
+            )
+        if len(prompts) >= 4:
+            break
+    if not prompts:
+        return "<p>Use each Still to reconstruct what changed visually and what question it leaves.</p>"
+    rows = ["<ul>"]
+    for prompt in prompts:
+        rows.append(f"<li>{prompt}</li>")
+    rows.append("</ul>")
+    return "\n".join(rows)
 
 
 def _coverage_table(topics: list[_Topic]) -> str:

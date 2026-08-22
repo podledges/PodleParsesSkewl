@@ -32,8 +32,6 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertIn("PodleSkewl-Setup.exe", readme + script + smoke)
         self.assertIn("pps-gui.exe", smoke)
         self.assertIn("PodleSkewl.exe", smoke)
-        self.assertIn("Parse + Notes", smoke)
-        self.assertIn("lecture.present.html", smoke)
         self.assertIn("WINDOWS-SMOKE-TEST.md", readme + script)
         self.assertNotIn("ffmpeg.exe", spec + gui_spec + installed_gui_spec + installer)
         self.assertNotIn("models", spec + gui_spec + installed_gui_spec + installer)

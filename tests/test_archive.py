@@ -96,22 +96,29 @@ class ArchiveTests(unittest.TestCase):
                 )
             self.assertFalse(archive.exists())
 
-    def test_sidecar_inside_output_is_left_in_place(self) -> None:
+    def test_inputs_inside_output_are_moved_but_generated_outputs_stay(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             folder = Path(raw)
-            recording = folder / "lecture.mp4"
             output = folder / "lecture.lecture"
             output.mkdir()
-            recording.write_bytes(b"mp4")
+            recording = output / "lecture.mp4"
             sidecar = output / "lecture.srt"
-            sidecar.write_text("generated", encoding="utf-8")
+            generated = output / "lecture.present.html"
+            recording.write_bytes(b"mp4")
+            sidecar.write_text("captions", encoding="utf-8")
+            generated.write_text("notes", encoding="utf-8")
+
             result = archive_inputs(
                 archive_dir=folder / "archive",
                 recording=recording,
                 sidecar=sidecar,
                 output_dir=output,
-                result_paths={},
+                result_paths={"present": str(generated)},
             )
-            self.assertTrue(sidecar.is_file())
-            self.assertFalse((result.run_dir / "lecture.srt").exists())
-            self.assertTrue(any("output folder" in item for item in result.skipped))
+
+            self.assertFalse(recording.exists())
+            self.assertFalse(sidecar.exists())
+            self.assertTrue(generated.is_file())
+            self.assertTrue((result.run_dir / "lecture.mp4").is_file())
+            self.assertTrue((result.run_dir / "lecture.srt").is_file())
+            self.assertEqual(result.skipped, ())

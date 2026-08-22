@@ -64,12 +64,10 @@ def archive_inputs(
         raise PpsError(f"cannot archive; transcript sidecar is not a file: {sidecar_resolved}")
 
     output_resolved = output_dir.resolve()
-    to_move = _inputs_to_move(recording, sidecar_resolved, output_resolved)
+    generated_outputs = _generated_outputs(result_paths, output_resolved)
+    to_move = _inputs_to_move(recording, sidecar_resolved, generated_outputs)
     if not to_move:
-        raise PpsError(
-            "nothing to archive: the Recording sits inside the Lecture output folder, "
-            "and generated files are never moved"
-        )
+        raise PpsError("nothing to archive: no input files are safe to move")
     run_dir = unique_run_dir(archive_dir, recording.stem, when=when)
     with writing(f"the archive folder {run_dir}"):
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -102,7 +100,7 @@ def archive_inputs(
             f"See {manifest_path}. Originals that moved are no longer at their input paths."
         ) from exc
 
-    skipped = _skip_reasons(recording, sidecar_resolved, output_resolved, set(to_move))
+    skipped = _skip_reasons(recording, sidecar_resolved, generated_outputs, set(to_move))
     manifest_path = _write_manifest(
         run_dir,
         status="ok",
@@ -125,36 +123,50 @@ def archive_inputs(
     )
 
 
+def _generated_outputs(result_paths: dict[str, str], output_dir: Path) -> set[Path]:
+    generated = {
+        output_dir / "lecture.json",
+        output_dir / "lecture.present.html",
+        output_dir / "lecture.ez.html",
+    }
+    for value in result_paths.values():
+        if value:
+            generated.add(Path(value).resolve())
+    return {path.resolve() for path in generated}
+
+
 def _inputs_to_move(
-    recording: Path, sidecar: Path | None, output_dir: Path
+    recording: Path, sidecar: Path | None, generated_outputs: set[Path]
 ) -> list[Path]:
     items = [recording]
-    if sidecar is not None and sidecar != recording and not _inside(sidecar, output_dir):
+    if sidecar is not None and sidecar != recording:
         items.append(sidecar)
-    # Never archive generated Lecture files.
-    return [path for path in items if not _inside(path, output_dir)]
+    return [path for path in items if path.resolve() not in generated_outputs]
 
 
 def _skip_reasons(
     recording: Path,
     sidecar: Path | None,
-    output_dir: Path,
+    generated_outputs: set[Path],
     moved_sources: set[Path],
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     if sidecar is not None and sidecar not in moved_sources:
-        if _inside(sidecar, output_dir):
+        if sidecar.resolve() in generated_outputs:
             reasons.append(
-                f"left sidecar in place because it lives in the Lecture output folder: {sidecar}"
+                f"left generated output in place instead of archiving it: {sidecar}"
             )
         elif sidecar == recording:
             reasons.append("sidecar path is the Recording itself")
         else:
             reasons.append(f"sidecar was not moved: {sidecar}")
     if recording not in moved_sources:
-        reasons.append(
-            f"refused to archive the Recording because it is inside the output folder: {recording}"
-        )
+        if recording.resolve() in generated_outputs:
+            reasons.append(
+                f"left generated output in place instead of archiving it: {recording}"
+            )
+        else:
+            reasons.append(f"Recording was not moved: {recording}")
     return tuple(reasons)
 
 
@@ -216,9 +228,3 @@ def _write_manifest(
     with writing(f"the archive manifest {path}"):
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
-
-
-def _inside(candidate: Path, folder: Path) -> bool:
-    root = folder.resolve()
-    resolved = candidate.resolve()
-    return root == resolved or root in resolved.parents
