@@ -11,3 +11,12 @@ lectures_dir = "C:\\Users\\ayden\\Videos\\Lectures"
 #
 # An explicitly passed --config file wins over PODLEPARSESSKEWL_LECTURES_DIR.
 # Your own podleparsesskewl.toml is git-ignored; only this example is committed.
+#
+# Optional default parent for Lecture folders. Each run still writes
+# <output_dir>/<recording-stem>.lecture. Unset means next to the Recording.
+# output_dir = "C:\\Users\\ayden\\Videos\\Lectures\\reviews"
+#
+# After `pps notes` / Parse + Notes succeeds, the Recording is moved (not copied)
+# into a unique folder under archive_dir. Generated Lecture files stay put.
+# archive_dir = "C:\\Users\\ayden\\Videos\\Lectures\\archive"
+# archive_after_notes = true

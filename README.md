@@ -2,7 +2,7 @@
 
 Review reconstruction for lecture recordings. One MP4 in; a structured Lecture Document out that pairs **what was said** with **what was shown**.
 
-The program is a standalone CLI. Sidecar-based parsing is fully offline. Audio transcription runs locally; the default named Whisper model may be downloaded once, then reused from local disk. A project skill, `/ezLectures`, can turn the same Document into a more aesthetic HTML view.
+The program is a standalone CLI with a small GUI. Sidecar-based parsing is fully offline. Audio transcription runs locally; the default named Whisper model may be downloaded once, then reused from local disk. Project skills `/ezLectures` and `/present` turn the same Document into a faithful HTML review or concise teaching notes. `/parse-skewl` and `/parse-skewl-notes` point agents at this repo's parser.
 
 ## What you get
 
@@ -10,9 +10,10 @@ One Recording (an MP4) is one Lecture. The program writes a folder:
 
 ```
 lecture.lecture/
-  lecture.json      # canonical structured Document
-  lecture.html      # plain program view
-  lecture.md        # same pairing in Markdown
+  lecture.json           # canonical structured Document
+  lecture.html           # plain program view
+  lecture.md             # same pairing in Markdown
+  lecture.present.html   # teaching notes (pps present / Parse + Notes)
   stills/
     still-001.png
     still-002.png
@@ -122,11 +123,17 @@ python3 -m podleparsesskewl render ./out/lecture/lecture.json
 
 # render into a different folder (the Still images are copied along)
 python3 -m podleparsesskewl render ./out/lecture/lecture.json -o ./elsewhere
+
+# write teaching notes from an existing Document
+python3 -m podleparsesskewl present ./out/lecture/lecture.json
+
+# parse, write lecture.present.html, then move the input into a unique archive folder
+python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive-dir ./archive
 ```
 
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
-End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command.
+End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is parse + present, then a move of the Recording into a unique archive folder. Use `--no-archive` to leave the input in place. The GUI Parse button is `parse`; Parse + Notes is `notes`.
 
 ### Transcripts
 
@@ -158,7 +165,7 @@ On any other machine (including this Linux worktree) that path is not visible. T
 
 1. Pass an MP4 path to `parse` directly, or
 2. Set `PODLEPARSESSKEWL_LECTURES_DIR` to a local folder, or
-3. Copy `podleparsesskewl.toml.example` to `podleparsesskewl.toml` and point `lectures_dir` at a reachable path.
+3. Copy `podleparsesskewl.toml.example` to `podleparsesskewl.toml` and point `lectures_dir` at a reachable path. Optional `output_dir` is the parent for default Lecture folders. Optional `archive_dir` is the parent for unique per-run archive folders after `pps notes`.
 
 Your own `podleparsesskewl.toml` stays local; it is git-ignored. Only the example file is committed.
 
@@ -173,6 +180,8 @@ Explicit settings beat ambient ones, in this order:
 3. `PODLEPARSESSKEWL_LECTURES_DIR`
 4. A discovered `podleparsesskewl.toml` (working directory, then `~/.config/podleparsesskewl/`)
 5. The default `C:\Users\ayden\Videos\Lectures`
+
+Default output parent and archive parent use the same explicit-beats-ambient order, via `--default-output-dir` / `output_dir` / `PODLEPARSESSKEWL_OUTPUT_DIR` and `--archive-dir` / `archive_dir` / `PODLEPARSESSKEWL_ARCHIVE_DIR`. An explicit `-o/--output` is still this run's Lecture folder. Archive never overwrites an existing run folder; each success gets a new timestamped directory and `archive-manifest.json`. Generated Lecture files are never moved. If archive fails after notes were written, the teaching Report stays in the output folder and the error names any input that already moved.
 
 `pps doctor` prints the resolved path and which of these it came from.
 
@@ -193,11 +202,15 @@ export PODLEPARSESSKEWL_LECTURES_DIR=/mnt/c/Users/ayden/Videos/Lectures
 
 You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those binaries are not on `PATH`. Under WSL these accept a Windows path too (`C:\ffmpeg\bin\ffmpeg.exe` is tried as `/mnt/c/ffmpeg/bin/ffmpeg.exe`). If an override does not point at a file, `doctor` names the variable rather than reporting the tool as generically missing.
 
-## Aesthetic HTML
+## Aesthetic HTML and teaching notes
 
-`/ezLectures` is an agent skill. It reads `lecture.json` and writes a dressed HTML view. It does not re-extract Stills or re-transcribe audio.
+`/ezLectures` is an agent skill. It reads `lecture.json` and writes a dressed, faithful HTML view (`lecture.ez.html`). It does not re-extract Stills or re-transcribe audio.
 
-The canonical skill file is `.agents/skills/ezLectures/SKILL.md` - edit that one. `.claude/skills/ezLectures/SKILL.md` and `.grok/skills/ezLectures/SKILL.md` exist only so Claude Code and Grok can discover `/ezLectures`; both point back at the canonical file instead of copying it.
+`/present` is the sibling skill for teaching notes. It reads the same Document and writes `lecture.present.html`: mental models grounded in Said+Shown, applications only when the lecture gave them, diagrams only where the Shown is not enough. It does not call ffmpeg or Whisper, and it does not fetch scripts or fonts from the network. `pps present` is the local/GUI generator for that same file; an agent following `/present` may then tighten the teaching pass.
+
+`/parse-skewl` runs `pps parse`. `/parse-skewl-notes` runs `pps notes` (parse + present + optional archive) and then the `/present` teaching pass.
+
+Canonical skill files live under `.agents/skills/<skill>/SKILL.md`. `.claude/skills/` and `.grok/skills/` hold discovery pointers only.
 
 ## Tests
 

@@ -85,6 +85,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.lectures_dir, Path("/mnt/c/Users/ayden/Videos/Lectures"))
         self.assertIn("C:\\Users\\ayden\\Videos\\Lectures", config.lectures_dir_source)
 
+    def test_config_output_and_archive_dirs_come_from_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            reviews = folder / "reviews"
+            archive = folder / "filed"
+            reviews.mkdir()
+            archive.mkdir()
+            config_file = folder / "my.toml"
+            config_file.write_text(
+                f'output_dir = "{reviews.as_posix()}"\n'
+                f'archive_dir = "{archive.as_posix()}"\n'
+                "archive_after_notes = false\n",
+                encoding="utf-8",
+            )
+            config = load_config(config_path=config_file)
+        self.assertEqual(config.output_dir, reviews)
+        self.assertEqual(config.archive_dir, archive)
+        self.assertFalse(config.archive_after_notes)
+
     def test_windows_path_translation_leaves_posix_paths_alone(self) -> None:
         self.assertEqual(
             windows_path_to_wsl(r"C:\Users\ayden\Videos\Lectures"),
