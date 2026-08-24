@@ -16,9 +16,12 @@ CI (GitHub Actions) is the remote automated check machine. Do not treat CI green
 
 ## Skills
 
-`/ezLectures` renders an aesthetic HTML view from an existing `lecture.json`.
-The one canonical definition is `.agents/skills/ezLectures/SKILL.md`; edit only that file.
-Every harness entry (`.claude/skills/<skill>/SKILL.md`, `.grok/skills/<skill>/SKILL.md`) is a discovery pointer back to the `.agents` file, never a copy of it.
+Canonical definitions live under `.agents/skills/<skill>/SKILL.md`. Harness entries in `.claude/skills/` and `.grok/skills/` are discovery pointers, never copies.
+
+- `/parse-skewl` runs this repo's parser on one local MP4.
+- `/present` writes teaching notes (`lecture.present.html`) from an existing `lecture.json`. Sibling of `/ezLectures`; it teaches, it does not replay Said verbatim.
+- `/parse-skewl-notes` runs parse, `/present`, and optional input archive.
+- `/ezLectures` renders a faithful aesthetic HTML view from an existing `lecture.json`.
 
 ## Constraints
 

@@ -85,6 +85,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.lectures_dir, Path("/mnt/c/Users/ayden/Videos/Lectures"))
         self.assertIn("C:\\Users\\ayden\\Videos\\Lectures", config.lectures_dir_source)
 
+    def test_config_output_and_archive_dirs_come_from_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            reviews = folder / "reviews"
+            archive = folder / "filed"
+            reviews.mkdir()
+            archive.mkdir()
+            config_file = folder / "my.toml"
+            config_file.write_text(
+                f'output_dir = "{reviews.as_posix()}"\n'
+                f'archive_dir = "{archive.as_posix()}"\n'
+                "archive_after_notes = false\n",
+                encoding="utf-8",
+            )
+            config = load_config(config_path=config_file)
+        self.assertEqual(config.output_dir, reviews)
+        self.assertEqual(config.archive_dir, archive)
+        self.assertFalse(config.archive_after_notes)
+
     def test_windows_path_translation_leaves_posix_paths_alone(self) -> None:
         self.assertEqual(
             windows_path_to_wsl(r"C:\Users\ayden\Videos\Lectures"),
@@ -438,6 +457,30 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("warning:", stderr.getvalue())
             self.assertIn("still-001", stderr.getvalue())
+
+    def test_present_to_another_folder_warns_about_uncopied_stills(self) -> None:
+        import contextlib
+        import io
+
+        from podleparsesskewl.pipeline import write_document
+        from podleparsesskewl.present import PRESENT_NAME
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            source = folder / "lecture"
+            source.mkdir()
+            path = write_document(document, source)
+
+            stderr = io.StringIO()
+            target = folder / "elsewhere"
+            with contextlib.redirect_stderr(stderr):
+                code = main(["present", str(path), "-o", str(target)])
+
+            self.assertEqual(code, 0)
+            self.assertTrue((target / PRESENT_NAME).is_file())
+            self.assertIn("warning:", stderr.getvalue())
+            self.assertIn("stills/still-001.png", stderr.getvalue())
 
     def test_render_rejects_a_structurally_invalid_document(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
