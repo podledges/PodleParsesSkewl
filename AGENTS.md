@@ -23,6 +23,10 @@ Canonical definitions live under `.agents/skills/<skill>/SKILL.md`. Harness entr
 - `/parse-skewl-notes` runs parse, `/present`, and optional input archive.
 - `/ezLectures` renders a faithful aesthetic HTML view from an existing `lecture.json`.
 
+## GUI
+
+Windows launcher: `podleparsesskewl/gui.py`. Next-step issue plan and open captain choices: `docs/gui-implementation-plan.md`.
+
 ## Constraints
 
 - One MP4 is one Lecture. The canonical result is `lecture.json`.
