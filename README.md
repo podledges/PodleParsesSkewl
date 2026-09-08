@@ -228,6 +228,10 @@ python3 -m unittest discover -s tests -v
 
 Core tests use deterministic fixtures (captions, synthetic frame signatures, Document rendering). The MP4 E2E builds a tiny two-Still file and parses it; it is skipped only when ffmpeg is missing from that process, which is a local-setup gap, not a substitute for running the media test.
 
+## Planning and assessments
+
+- [Pi `/transcribe` reuse assessment](docs/planning/pi-transcribe-reuse-assessment.md) records the revision-pinned reuse findings, current gaps, and proposed V1 acceptance tests. It is a proposal, not implemented or approved scope.
+
 ## Domain language
 
 See [CONTEXT.md](CONTEXT.md).
