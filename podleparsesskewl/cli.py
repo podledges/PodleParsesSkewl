@@ -22,6 +22,7 @@ from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.pipeline import (
     ParseOptions,
     copy_still_images,
+    default_output_dir,
     load_document,
     parse_recording,
 )
@@ -99,9 +100,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "transcribe",
         help="transcribe one local audio/video file into bounded machine output and local artifacts",
     )
-    _add_config_flags(transcribe)
     _add_recording_flags(transcribe, explicit=True)
-    _add_parse_option_flags(transcribe)
+    _add_parse_option_flags(transcribe, explicit=True)
     transcribe.set_defaults(
         offline_transcription=True,
         local_files_root=Path.home() / ".cache" / "podleparsesskewl" / "models",
@@ -195,9 +195,12 @@ def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = Fa
         "-o",
         "--output",
         type=Path,
-        help="output directory (default: configured output_dir/<stem>.lecture, else next to the file)",
+        help=("output directory (default: <stem>.lecture next to the file)" if explicit else
+              "output directory (default: configured output_dir/<stem>.lecture, else next to the file)"),
     )
-    parser.add_argument("--title", help="Lecture title (default: recording filename)")
+    parser.set_defaults(title=None)
+    if not explicit:
+        parser.add_argument("--title", help="Lecture title (default: recording filename)")
     parser.add_argument(
         "--transcript",
         type=Path,
@@ -205,15 +208,17 @@ def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = Fa
     )
 
 
-def _add_parse_option_flags(parser: argparse.ArgumentParser) -> None:
+def _add_parse_option_flags(parser: argparse.ArgumentParser, *, explicit: bool = False) -> None:
     parser.add_argument("--sample-fps", type=float, default=DEFAULT_SAMPLE_FPS)
     parser.add_argument("--change-ratio", type=float, default=DEFAULT_CHANGE_RATIO)
     parser.add_argument("--min-hold-seconds", type=float, default=DEFAULT_MIN_HOLD_SECONDS)
-    parser.add_argument(
-        "--keep-work",
-        action="store_true",
-        help="keep this run's intermediate ffmpeg files in its _work-* folder under the output directory",
-    )
+    parser.set_defaults(keep_work=False)
+    if not explicit:
+        parser.add_argument(
+            "--keep-work",
+            action="store_true",
+            help="keep this run's intermediate ffmpeg files in its _work-* folder under the output directory",
+        )
     parser.add_argument(
         "--whisper-model",
         default=DEFAULT_WHISPER_MODEL,
@@ -307,9 +312,8 @@ def _cmd_parse(args: argparse.Namespace) -> int:
 
 
 def _cmd_transcribe(args: argparse.Namespace) -> int:
-    recording = _resolve_recording(args)
-    config = _config_from_args(args)
-    output = resolve_output_dir(recording, args.output, config)
+    recording = args.recording
+    output = args.output if args.output is not None else default_output_dir(recording)
     started = time.monotonic()
 
     def progress(phase: str) -> None:

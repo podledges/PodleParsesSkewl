@@ -164,15 +164,32 @@ class AgentContractTests(unittest.TestCase):
 
         parser = _build_parser()
         for args in (["--latest"], ["file.mp3", "--allow-model-download"],
-                     ["file.mp3", "--visual-lookback-seconds", "10"]):
+                     ["file.mp3", "--visual-lookback-seconds", "10"],
+                     ["file.mp3", "--config", "settings.toml"],
+                     ["file.mp3", "--lectures-dir", "lectures"],
+                     ["file.mp3", "--default-output-dir", "results"],
+                     ["file.mp3", "--title", "Custom"],
+                     ["file.mp3", "--keep-work"]):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 parser.parse_args(["transcribe", *args])
         args = parser.parse_args(["transcribe", "file.mp3"])
         self.assertTrue(args.offline_transcription)
         self.assertEqual(args.visual_lookback_seconds, 30)
-        args = parser.parse_args(["parse", "--latest"])
-        self.assertTrue(args.latest)
-        self.assertIsNone(args.visual_lookback_seconds)
+        self.assertIsNone(args.title)
+        self.assertFalse(args.keep_work)
+        for command in ("parse", "notes"):
+            args = parser.parse_args([
+                command, "--latest", "--title", "Custom", "--keep-work",
+                "--config", "settings.toml", "--lectures-dir", "lectures",
+                "--default-output-dir", "results",
+            ])
+            self.assertTrue(args.latest)
+            self.assertIsNone(args.visual_lookback_seconds)
+            self.assertEqual(args.title, "Custom")
+            self.assertTrue(args.keep_work)
+            self.assertEqual(args.config, Path("settings.toml"))
+            self.assertEqual(args.lectures_dir, Path("lectures"))
+            self.assertEqual(args.default_output_dir, Path("results"))
 
     def test_machine_result_returns_paths_not_transcript_body(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -206,9 +223,22 @@ class AgentContractTests(unittest.TestCase):
                 artifacts["markdown"],
             )
             stdout = io.StringIO()
-            with mock.patch("podleparsesskewl.cli.parse_recording", return_value=result):
-                with contextlib.redirect_stdout(stdout):
-                    code = main(["transcribe", str(recording), "-o", str(output)])
+            with (
+                mock.patch("podleparsesskewl.cli.parse_recording", return_value=result) as parse,
+                mock.patch("podleparsesskewl.cli.load_config", side_effect=AssertionError("legacy configuration loaded")),
+                contextlib.redirect_stdout(stdout),
+            ):
+                code = main(["transcribe", str(recording), "-o", str(output)])
+            self.assertEqual(parse.call_args.args[1].output_dir, output)
+            self.assertIsNone(parse.call_args.args[1].title)
+            self.assertFalse(parse.call_args.args[1].keep_work)
+            with (
+                mock.patch("podleparsesskewl.cli.parse_recording", return_value=result) as parse,
+                mock.patch("podleparsesskewl.cli.load_config", side_effect=AssertionError("legacy configuration loaded")),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(main(["transcribe", str(recording)]), 0)
+            self.assertEqual(parse.call_args.args[1].output_dir, folder / "lecture.lecture")
             payload = json.loads(stdout.getvalue())
             self.assertEqual(code, 0)
             self.assertEqual(payload["artifacts"]["transcript"], str(artifacts["transcript"]))
