@@ -166,6 +166,21 @@ On this WSL host, `/usr/lib/wsl/lib/libcuda.so` is present but `nvidia-smi` cann
 /mnt/c/Users/ayden/.cache/huggingface/hub/models--Systran--faster-whisper-small/snapshots/536b0662742c02347bc0e980a01041f333bce120
 ```
 
+For NixOS/WSL, the following project-local Python 3.12 setup was verified with faster-whisper 1.2.1 and CTranslate2 4.8.2. The C++ library path is required for the binary wheels; installing the Python packages alone leaves `libstdc++.so.6` unavailable. Dependency provisioning can use the network, but the smoke test uses only an existing model snapshot, with Hugging Face offline mode enabled.
+
+```bash
+# From this checkout; no global Python installation or configuration changes.
+nix-shell -p python312 ffmpeg espeak-ng
+export LD_LIBRARY_PATH="$(nix-build --no-out-link '<nixpkgs>' -A stdenv.cc.cc.lib)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[transcribe]'
+export PPS_TEST_MODEL_PATH=/mnt/c/Users/ayden/.cache/huggingface/hub/models--Systran--faster-whisper-base/snapshots/ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66
+.venv/bin/pps doctor
+.venv/bin/python -m unittest tests.test_local_asr -v
+```
+
+This opt-in check synthesizes local speech with eSpeak NG and transcribes both MP3 and MP4 without sidecars or mocked ASR. It checks recognized phrases, timestamped cue coverage in the report, artifact paths, progress, offline CPU provenance, and zero audio-only Stills. Temporary media/output is removed automatically. The verified host reported zero CUDA devices and passed on CPU/int8; this short smoke test does not establish long-recording accuracy, GPU support, or native Windows teardown. Run Pi from the same shell with `PPS_EXECUTABLE="$PWD/.venv/bin/pps"` to inherit the wheel library path.
+
 Provision faster-whisper in the selected WSL Python and run `pps doctor` before relying on WSL GPU. If CTranslate2 still reports zero CUDA devices, use `PPS_DEVICE=cpu` honestly. A native Windows Python may use those same snapshot paths in Windows form, but native Windows process and GPU validation remains required before calling it supported.
 
 ### Transcripts
