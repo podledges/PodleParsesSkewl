@@ -35,8 +35,7 @@ function requiredAbsolutePath(name: string): string {
   return value;
 }
 
-async function localFile(raw: string, cwd: string): Promise<string> {
-  const value = raw.startsWith("@") ? raw.slice(1) : raw;
+async function localFile(value: string, cwd: string): Promise<string> {
   if (/^[a-z]+:\/\//i.test(value)) throw new Error("Only local files are supported");
   const path = await realpath(resolve(cwd, value));
   if (!(await stat(path)).isFile()) throw new Error(`Recording is not a file: ${path}`);

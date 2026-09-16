@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import wave
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable
@@ -13,7 +14,7 @@ from podleparsesskewl.align import align_cues_to_stills
 from podleparsesskewl.deps import Environment, inspect_environment
 from podleparsesskewl.document import LectureDocument, SourceInfo, Still, still_id, still_image_name
 from podleparsesskewl.errors import PpsError, writing
-from podleparsesskewl.media import extract_still_png, probe_recording, sample_signatures
+from podleparsesskewl.media import extract_audio_wav, extract_stills_png, probe_recording, sample_signatures
 from podleparsesskewl.report import (
     DEFAULT_PARAGRAPH_WORDS,
     DEFAULT_PAUSE_SECONDS,
@@ -111,6 +112,12 @@ def parse_recording(
         duration_seconds = _effective_duration(
             probe.duration_seconds, frames, options.sample_fps
         )
+        if duration_seconds <= 0 and probe.has_audio and not probe.has_video:
+            wav = work_dir / "audio.wav"
+            if not wav.is_file():
+                extract_audio_wav(recording, wav, environment)
+            with wave.open(str(wav), "rb") as audio:
+                duration_seconds = audio.getnframes() / audio.getframerate()
         intervals = (
             segment_stills(
                 frames,
@@ -123,16 +130,18 @@ def parse_recording(
             else []
         )
 
+        if intervals:
+            extract_stills_png(
+                recording,
+                [interval.representative_seconds for interval in intervals],
+                output_dir,
+                work_dir,
+                environment,
+                fps=options.sample_fps,
+            )
         stills: list[Still] = []
         for index, interval in enumerate(intervals, start=1):
             image_rel = still_image_name(index)
-            image_path = output_dir / image_rel
-            extract_still_png(
-                recording,
-                interval.representative_seconds,
-                image_path,
-                environment,
-            )
             stills.append(
                 Still(
                     id=still_id(index),

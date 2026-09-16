@@ -120,9 +120,11 @@ class MissingDurationPipelineTests(unittest.TestCase):
             )
             output = folder / "out"
 
-            def fake_still(_recording, _timestamp, dest: Path, _env):
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(b"\x89PNG")
+            def fake_still(_recording, timestamps, output, _work, _env, *, fps):
+                for index in range(1, len(timestamps) + 1):
+                    dest = output / f"stills/still-{index:03d}.png"
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(b"\x89PNG")
 
             with mock.patch(
                 "podleparsesskewl.pipeline.probe_recording",
@@ -138,7 +140,7 @@ class MissingDurationPipelineTests(unittest.TestCase):
                     "podleparsesskewl.pipeline.sample_signatures", return_value=frames
                 ):
                     with mock.patch(
-                        "podleparsesskewl.pipeline.extract_still_png", side_effect=fake_still
+                        "podleparsesskewl.pipeline.extract_stills_png", side_effect=fake_still
                     ):
                         result = parse_recording(
                             recording,

@@ -29,6 +29,32 @@ def _env() -> Environment:
 
 
 class AudioOnlyTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required for live WebM regression")
+    def test_durationless_audio_uses_decoded_duration_not_cue_end(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "live.webm"
+            subprocess.run([
+                shutil.which("ffmpeg"), "-v", "error", "-f", "lavfi",
+                "-i", "sine=duration=3", "-c:a", "libopus", "-live", "1", str(recording),
+            ], check=True, capture_output=True)
+            from podleparsesskewl.deps import inspect_environment
+            from podleparsesskewl.media import probe_recording
+
+            self.assertEqual(probe_recording(recording, inspect_environment()).duration_seconds, 0)
+            recording.with_suffix(".srt").write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nAudio only.\n", encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(main(["transcribe", str(recording)]), 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertAlmostEqual(payload["duration_seconds"], 3, delta=0.05)
+            document = json.loads(Path(payload["artifacts"]["document"]).read_text())
+            self.assertAlmostEqual(document["source"]["duration_seconds"], 3, delta=0.05)
+            self.assertEqual(document["stills"], [])
+            self.assertEqual(list((folder / "live.lecture").glob("_work-*")), [])
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required for audio-only E2E")
     def test_mp3_with_sidecar_runs_end_to_end(self) -> None:
         ffmpeg = shutil.which("ffmpeg")
@@ -72,7 +98,7 @@ class AudioOnlyTests(unittest.TestCase):
                 ),
             ):
                 with mock.patch("podleparsesskewl.pipeline.sample_signatures") as sample:
-                    with mock.patch("podleparsesskewl.pipeline.extract_still_png") as still:
+                    with mock.patch("podleparsesskewl.pipeline.extract_stills_png") as still:
                         result = parse_recording(
                             recording,
                             ParseOptions(output_dir=folder / "out"),

@@ -164,9 +164,11 @@ class WorkFolderTests(unittest.TestCase):
             transcriber=ToolStatus("transcriber", False, None, "none"),
         )
 
-        def fake_still(_recording, _timestamp, dest: Path, _env):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"\x89PNG")
+        def fake_still(_recording, timestamps, output, _work, _env, *, fps):
+            for index in range(1, len(timestamps) + 1):
+                dest = output / f"stills/still-{index:03d}.png"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b"\x89PNG")
 
         with tempfile.TemporaryDirectory() as raw:
             folder = Path(raw)
@@ -194,7 +196,7 @@ class WorkFolderTests(unittest.TestCase):
                     "podleparsesskewl.pipeline.sample_signatures", return_value=frames
                 ):
                     with mock.patch(
-                        "podleparsesskewl.pipeline.extract_still_png", side_effect=fake_still
+                        "podleparsesskewl.pipeline.extract_stills_png", side_effect=fake_still
                     ):
                         parse_recording(
                             recording, ParseOptions(output_dir=output), env=env
@@ -388,3 +390,39 @@ class PipelineTests(unittest.TestCase):
                         return decoded.stdout
 
                     self.assertEqual(gray(["-i", str(later)]), gray(["-ss", "5", "-i", str(recording)]))
+
+    @unittest.skipUnless(_ffmpeg(), "ffmpeg required for sub-frame offset regression")
+    def test_sub_frame_offset_extraction_matches_sampled_visuals(self) -> None:
+        ffmpeg = _ffmpeg()
+        assert ffmpeg is not None
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "offset.mkv"
+            subprocess.run([
+                ffmpeg, "-v", "error",
+                "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=4.2",
+                "-f", "lavfi", "-i", "color=blue:s=160x90:r=25:d=1.8",
+                "-f", "lavfi", "-i", "color=green:s=160x90:r=25:d=3",
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+                "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0,setpts=PTS+0.02/TB[v]",
+                "-map", "[v]", "-map", "3:a", "-c:v", "ffv1",
+                "-enc_time_base:v", "1:1000", "-c:a", "pcm_s16le",
+                "-t", "9.02", "-fps_mode", "passthrough", str(recording),
+            ], check=True, capture_output=True)
+            recording.with_suffix(".srt").write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nHello.\n", encoding="utf-8",
+            )
+            result = parse_recording(recording, ParseOptions(output_dir=folder / "out"))
+            self.assertEqual(len(result.document.stills), 3)
+            for still, timestamp in zip(result.document.stills, (1, 5, 8)):
+                image = subprocess.check_output([
+                    ffmpeg, "-v", "error", "-i", str(folder / "out" / still.image),
+                    "-frames:v", "1", "-vf", "scale=1:1,format=gray", "-f", "rawvideo", "-",
+                ])
+                expected = subprocess.check_output([
+                    ffmpeg, "-v", "error", "-ss", str(timestamp), "-i", str(recording),
+                    "-frames:v", "1", "-vf", "scale=1:1,format=gray", "-f", "rawvideo", "-",
+                ])
+                self.assertEqual(len(image), 1)
+                self.assertEqual(len(expected), 1)
+                self.assertLessEqual(abs(image[0] - expected[0]), 1)

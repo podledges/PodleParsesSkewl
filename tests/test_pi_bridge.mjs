@@ -63,7 +63,7 @@ const output = process.argv[process.argv.indexOf('--output') + 1];
 if (process.argv[3].endsWith('success.mp3')) {
   const artifact = join(output, 'é-transcript.md');
   writeFileSync(artifact, 'private transcript');
-  const result = JSON.stringify({type:'result', schema:'podleparsesskewl.transcription/v1', artifacts:{transcript:artifact}});
+  const result = JSON.stringify({type:'result', schema:'podleparsesskewl.transcription/v1', source:process.argv[3], artifacts:{transcript:artifact}});
   spawn(process.execPath, ['-e', \
     'const b=Buffer.from(process.argv[1]); const i=b.indexOf(Buffer.from("é"))+1; setTimeout(()=>{process.stdout.write(b.subarray(0,i));setTimeout(()=>process.stdout.write(b.subarray(i)),30)},60)', result],
     {stdio:['ignore', 'inherit', 'inherit']});
@@ -81,6 +81,7 @@ if (process.argv[3].endsWith('success.mp3')) {
 `, { mode: 0o755 });
     await writeFile(join(root, "hang.mp3"), "audio");
     await writeFile(join(root, "success.mp3"), "audio");
+    await writeFile(join(root, "@success.mp3"), "different audio");
     process.env.PPS_EXECUTABLE = executable;
     process.env.PPS_MODEL_CACHE = root;
     delete process.env.PPS_MODEL_PATH;
@@ -115,7 +116,8 @@ if (process.argv[3].endsWith('success.mp3')) {
     await absent(join(root, "early"));
 
     const success = join(root, "success");
-    const result = await a.run(success, undefined, undefined, "success.mp3");
+    const result = await a.run(success, undefined, undefined, "@success.mp3");
+    assert.equal(result.details.source, join(root, "@success.mp3"));
     assert.equal(result.details.artifacts.transcript, join(success, "é-transcript.md"));
     assert.equal(await readFile(result.details.artifacts.transcript, "utf8"), "private transcript");
 

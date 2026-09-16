@@ -29,6 +29,13 @@ def _only_ctranslate2(binary: str) -> str | None:
 
 
 class TranscribeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        ctranslate2 = types.ModuleType("ctranslate2")
+        ctranslate2.get_cuda_device_count = Mock(return_value=0)
+        patcher = mock.patch.dict(sys.modules, {"ctranslate2": ctranslate2})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_sidecar_is_used_without_an_audio_engine(self) -> None:
         env = Mock()
         env.can_transcribe_audio = False
@@ -160,6 +167,7 @@ class TranscribeTests(unittest.TestCase):
                     Mock(),
                     transcription=TranscriptionOptions(
                         model="small",
+                        device="cpu",
                         local_files_root=cache,
                         offline=True,
                     ),
@@ -210,6 +218,7 @@ class TranscribeTests(unittest.TestCase):
                     Mock(),
                     transcription=TranscriptionOptions(
                         model_path=model_path,
+                        device="cpu",
                         local_files_root=cache,
                     ),
                 )
