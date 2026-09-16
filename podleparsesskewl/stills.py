@@ -143,7 +143,7 @@ def segment_stills(
                 block=block,
                 block_threshold=block_threshold,
             ) >= change_ratio
-            changed = local_changed or (changed and current_changed)
+            changed = current_changed and (local_changed or changed)
         if changed:
             hold_until = frame.time_seconds + min_hold_seconds
             new_samples = frame.samples
@@ -166,9 +166,7 @@ def segment_stills(
                 starts.append((current_start, current_rep))
                 current_start = frame.time_seconds
                 current_samples = new_samples
-                # Use the next decoded sample inside the accepted interval. Seeking
-                # exactly to an fps-filter boundary can return the preceding frame.
-                current_rep = frames[min(index + 1, len(frames) - 1)].time_seconds
+                current_rep = frames[max(index, hold_index - 1)].time_seconds
                 index = max(hold_index, index + 1)
                 continue
         index += 1

@@ -157,7 +157,7 @@ export PPS_MODEL_CACHE="/absolute/path/to/huggingface/hub"
 #           PPS_DEVICE=cuda|cpu|auto, PPS_OUTPUT_ROOT=/absolute/output/root
 ```
 
-Use `/transcribe /absolute/path/to/lecture.mp4` interactively or call `pps_transcribe` from a frontend agent. The extension passes argv without a shell, allows one job per Pi session, streams honest phases, and terminates its owned Python/ffmpeg process tree on abort or session shutdown. It accepts local files only and never uploads media or falls back to cloud ASR.
+Use `/transcribe /absolute/path/to/lecture.mp4` interactively or call `pps_transcribe` from a frontend agent. Cancel an interactive command with Ctrl+Shift+X or `/transcribe --cancel`; tool calls also honor the agent abort signal. The extension passes argv without a shell, allows one job per Pi session, streams honest phases, and terminates its owned Python/ffmpeg process tree on abort or session shutdown. It accepts local files only and never uploads media or falls back to cloud ASR.
 
 On this WSL host, `/usr/lib/wsl/lib/libcuda.so` is present but `nvidia-smi` cannot load `libnvidia-ml.so`, and the system Python has neither CTranslate2 nor faster-whisper. GPU ASR is therefore not claimed for that runtime. The compatible caches currently present on the Windows filesystem are:
 
@@ -258,6 +258,8 @@ nix-shell --run 'python3 -m unittest discover -s tests -v'
 # if ffmpeg is already on PATH
 python3 -m unittest discover -s tests -v
 ```
+
+With the Pi package's peer dependencies available, run `node --test tests/test_pi_bridge.mjs` for the registered tool/command lifecycle regressions (POSIX).
 
 Core tests use deterministic fixtures (captions, synthetic frame signatures, Document rendering). The MP4 E2E builds a tiny two-Still file and parses it; it is skipped only when ffmpeg is missing from that process, which is a local-setup gap, not a substitute for running the media test.
 

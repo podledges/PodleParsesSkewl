@@ -108,7 +108,7 @@ def sample_signatures(
         "-i",
         str(recording),
         "-vf",
-        f"fps={fps},scale={width}:{height}:flags=fast_bilinear,format=gray",
+        f"fps={fps}:round=up,scale={width}:{height}:flags=fast_bilinear,format=gray",
         "-f",
         "rawvideo",
         "-pix_fmt",

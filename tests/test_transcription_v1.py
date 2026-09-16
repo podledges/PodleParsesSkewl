@@ -128,6 +128,28 @@ class LookbackTests(unittest.TestCase):
         )
         self.assertEqual([interval.start_seconds for interval in intervals], [0.0, 5.0, 10.0])
 
+    def test_rejected_flash_does_not_duplicate_the_accepted_still(self) -> None:
+        frames = [
+            FrameSignature(t, 16, 16, bytes([255 if t == 5 else 0]) * 256)
+            for t in range(12)
+        ]
+        intervals = segment_stills(frames, duration_seconds=12, lookback_seconds=30)
+        self.assertEqual(len(intervals), 1)
+
+    def test_one_sample_hold_representative_stays_in_its_interval(self) -> None:
+        frames = [
+            FrameSignature(t, 16, 16, bytes([0 if t < 5 else 255 if t == 5 else 128]) * 256)
+            for t in range(12)
+        ]
+        for lookback in (None, 30):
+            intervals = segment_stills(
+                frames, duration_seconds=12, min_hold_seconds=1, lookback_seconds=lookback,
+            )
+            self.assertEqual([i.start_seconds for i in intervals], [0, 5, 6])
+            for interval in intervals:
+                self.assertLess(interval.representative_seconds, interval.end_seconds)
+            self.assertEqual(intervals[1].representative_seconds, 5)
+
     def test_thirty_second_lookback_does_not_use_last_accepted_anchor(self) -> None:
         frames = [FrameSignature(float(t), 16, 16, bytes([t // 2]) * 256) for t in range(101)]
         anchored = segment_stills(frames, duration_seconds=101)
@@ -137,6 +159,21 @@ class LookbackTests(unittest.TestCase):
 
 
 class AgentContractTests(unittest.TestCase):
+    def test_transcribe_requires_explicit_offline_input_and_fixed_visual_policy(self) -> None:
+        from podleparsesskewl.cli import _build_parser
+
+        parser = _build_parser()
+        for args in (["--latest"], ["file.mp3", "--allow-model-download"],
+                     ["file.mp3", "--visual-lookback-seconds", "10"]):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                parser.parse_args(["transcribe", *args])
+        args = parser.parse_args(["transcribe", "file.mp3"])
+        self.assertTrue(args.offline_transcription)
+        self.assertEqual(args.visual_lookback_seconds, 30)
+        args = parser.parse_args(["parse", "--latest"])
+        self.assertTrue(args.latest)
+        self.assertIsNone(args.visual_lookback_seconds)
+
     def test_machine_result_returns_paths_not_transcript_body(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             folder = Path(raw)
@@ -203,9 +240,6 @@ try { process.kill(pid, 0); process.exit(2); } catch { process.exit(0); }
             timeout=10,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        source = Path("pi/extensions/transcribe.ts").read_text(encoding="utf-8")
-        self.assertIn('pi.on("session_shutdown"', source)
-        self.assertIn("signal?.addEventListener", source)
 
 
 if __name__ == "__main__":

@@ -100,18 +100,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="transcribe one local audio/video file into bounded machine output and local artifacts",
     )
     _add_config_flags(transcribe)
-    _add_recording_flags(transcribe)
+    _add_recording_flags(transcribe, explicit=True)
     _add_parse_option_flags(transcribe)
     transcribe.set_defaults(
         offline_transcription=True,
         local_files_root=Path.home() / ".cache" / "podleparsesskewl" / "models",
         visual_lookback_seconds=DEFAULT_LOOKBACK_SECONDS,
-    )
-    transcribe.add_argument(
-        "--allow-model-download",
-        action="store_false",
-        dest="offline_transcription",
-        help="allow the local ASR engine to download a missing named model",
     )
     transcribe.add_argument(
         "--jsonl-progress",
@@ -184,18 +178,19 @@ def _add_config_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_recording_flags(parser: argparse.ArgumentParser) -> None:
+def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = False) -> None:
     parser.add_argument(
         "recording",
-        nargs="?",
+        **({} if explicit else {"nargs": "?"}),
         type=Path,
-        help="path to a local audio/video Recording (omit with --latest)",
+        help="path to a local audio/video Recording",
     )
-    parser.add_argument(
-        "--latest",
-        action="store_true",
-        help="use the newest MP4 in the configured lecture directory",
-    )
+    if not explicit:
+        parser.add_argument(
+            "--latest",
+            action="store_true",
+            help="use the newest MP4 in the configured lecture directory",
+        )
     parser.add_argument(
         "-o",
         "--output",
@@ -248,7 +243,7 @@ def _add_parse_option_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--pause-seconds", type=float, default=1.5)
     parser.add_argument("--paragraph-words", type=int, default=120)
-    parser.add_argument("--visual-lookback-seconds", type=float)
+    parser.set_defaults(visual_lookback_seconds=None)
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
