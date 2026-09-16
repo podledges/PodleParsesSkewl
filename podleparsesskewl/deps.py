@@ -114,6 +114,13 @@ def _transcriber_status() -> ToolStatus:
         import faster_whisper  # noqa: F401
     except ImportError:
         pass
+    except Exception as exc:
+        return ToolStatus(
+            name="transcriber",
+            found=False,
+            path=None,
+            detail=f"faster-whisper could not be imported: {type(exc).__name__}: {exc}",
+        )
     else:
         return ToolStatus(
             name="transcriber",

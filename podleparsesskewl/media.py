@@ -53,7 +53,7 @@ def probe_recording(path: Path, env: Environment) -> Probe:
     has_video = False
     for stream in payload.get("streams") or []:
         kind = stream.get("codec_type")
-        if kind == "video":
+        if kind == "video" and (stream.get("disposition") or {}).get("attached_pic") != 1:
             has_video = True
             if stream.get("width"):
                 width = int(stream["width"])
@@ -63,6 +63,8 @@ def probe_recording(path: Path, env: Environment) -> Probe:
                 duration = _optional_seconds(stream.get("duration")) or 0.0
         elif kind == "audio":
             has_audio = True
+            if duration == 0.0:
+                duration = _optional_seconds(stream.get("duration")) or 0.0
     return Probe(
         duration_seconds=duration,
         width=width,

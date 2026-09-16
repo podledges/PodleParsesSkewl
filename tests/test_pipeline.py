@@ -341,3 +341,45 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("<hr>", rebuilt)
             self.assertEqual(result.document.source.transcript_source, "sidecar:srt:lecture.srt")
             self.assertEqual(list(output.glob("_work*")), [])
+
+    @unittest.skipUnless(_ffmpeg(), "ffmpeg required for representative-frame regression")
+    def test_off_tick_transition_uses_a_frame_inside_the_new_interval(self) -> None:
+        ffmpeg = _ffmpeg()
+        assert ffmpeg is not None
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "off-tick.mp4"
+            made = subprocess.run(
+                [
+                    ffmpeg, "-v", "error",
+                    "-f", "lavfi", "-i", "color=red:s=160x90:r=25:d=4.2",
+                    "-f", "lavfi", "-i", "color=blue:s=160x90:r=25:d=4",
+                    "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+                    "-map", "[v]", "-c:v", "mpeg4", "-y", str(recording),
+                ],
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(made.returncode, 0, made.stderr.decode(errors="replace"))
+            (folder / "off-tick.srt").write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nFirst.\n\n"
+                "2\n00:00:06,000 --> 00:00:07,000\nSecond.\n",
+                encoding="utf-8",
+            )
+            result = parse_recording(
+                recording,
+                ParseOptions(output_dir=folder / "out", sample_fps=1, min_hold_seconds=1),
+            )
+            self.assertGreaterEqual(len(result.document.stills), 2)
+            later = folder / "out" / result.document.stills[1].image
+
+            def gray(args: list[str]) -> bytes:
+                decoded = subprocess.run(
+                    [ffmpeg, "-v", "error", *args, "-frames:v", "1", "-vf", "scale=1:1,format=gray", "-f", "rawvideo", "-"],
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(decoded.returncode, 0, decoded.stderr.decode(errors="replace"))
+                return decoded.stdout
+
+            self.assertEqual(gray(["-i", str(later)]), gray(["-ss", "5", "-i", str(recording)]))

@@ -46,6 +46,30 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(probe.duration_seconds, 0.0)
                 self.assertTrue(probe.has_video)
 
+    def test_attached_cover_art_is_not_a_moving_video_stream(self) -> None:
+        payload = json.dumps(
+            {
+                "format": {"duration": "90"},
+                "streams": [
+                    {"codec_type": "audio"},
+                    {
+                        "codec_type": "video",
+                        "width": 600,
+                        "height": 600,
+                        "disposition": {"attached_pic": 1},
+                    },
+                ],
+            }
+        )
+        with mock.patch(
+            "podleparsesskewl.media._run",
+            return_value=SimpleNamespace(stdout=payload, stderr=""),
+        ):
+            probe = probe_recording(Path("lecture.mp3"), _env())
+        self.assertTrue(probe.has_audio)
+        self.assertFalse(probe.has_video)
+        self.assertIsNone(probe.width)
+
     def test_numeric_duration_is_read(self) -> None:
         with mock.patch(
             "podleparsesskewl.media._run",

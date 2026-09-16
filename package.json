@@ -1,0 +1,15 @@
+{
+  "name": "podleparsesskewl-pi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local long-video transcription for Pi, powered by PodleParsesSkewl",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./pi/extensions/transcribe.ts"],
+    "skills": ["./.agents/skills/transcribe"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

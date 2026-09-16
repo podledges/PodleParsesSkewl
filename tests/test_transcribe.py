@@ -140,7 +140,7 @@ class TranscribeTests(unittest.TestCase):
             wav.write_bytes(b"")
             with mock.patch.dict(sys.modules, {"faster_whisper": _faster_whisper_module(model)}):
                 transcript = transcribe_wav(wav, Mock())
-        self.assertEqual(transcript.source, "audio:faster-whisper:base")
+        self.assertEqual(transcript.source, "audio:faster-whisper:base:cpu")
         self.assertEqual(transcript.cues[0].text, "Hello class.")
         self.assertEqual(transcript.cues[0].start_seconds, 1.0)
 
@@ -171,7 +171,26 @@ class TranscribeTests(unittest.TestCase):
             download_root=str(cache),
             local_files_only=True,
         )
-        self.assertEqual(transcript.source, "audio:faster-whisper:small")
+        self.assertEqual(transcript.source, "audio:faster-whisper:small:cpu")
+
+    def test_faster_whisper_uses_cuda_when_ctranslate2_reports_a_gpu(self) -> None:
+        segment = types.SimpleNamespace(start=1.0, end=2.0, text="Hello class.")
+        model = Mock()
+        model.transcribe.return_value = ([segment], None)
+        module = _faster_whisper_module(model)
+        ctranslate2 = types.ModuleType("ctranslate2")
+        ctranslate2.get_cuda_device_count = Mock(return_value=1)
+        with tempfile.TemporaryDirectory() as raw:
+            wav = Path(raw) / "audio.wav"
+            wav.write_bytes(b"")
+            with mock.patch.dict(
+                sys.modules,
+                {"faster_whisper": module, "ctranslate2": ctranslate2},
+            ):
+                transcript = transcribe_wav(wav, Mock())
+        self.assertEqual(module.WhisperModel.call_args.kwargs["device"], "cuda")
+        self.assertEqual(module.WhisperModel.call_args.kwargs["compute_type"], "float16")
+        self.assertEqual(transcript.source, "audio:faster-whisper:base:cuda")
 
     def test_explicit_model_path_is_passed_without_creating_cache(self) -> None:
         segment = types.SimpleNamespace(start=1.0, end=2.0, text="Hello class.")

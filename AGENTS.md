@@ -7,6 +7,7 @@ Standalone lecture review-reconstruction tool. Domain language lives in `CONTEXT
 ```bash
 python3 -m podleparsesskewl doctor
 python3 -m podleparsesskewl parse path/to/lecture.mp4
+python3 -m podleparsesskewl transcribe path/to/lecture.mp4 --local-files-root /absolute/model/cache
 nix-shell --run 'python3 -m unittest discover -s tests -v'
 ```
 
@@ -22,6 +23,7 @@ Canonical definitions live under `.agents/skills/<skill>/SKILL.md`. Harness entr
 - `/present` writes teaching notes (`lecture.present.html`) from an existing `lecture.json`. Sibling of `/ezLectures`; it teaches, it does not replay Said verbatim.
 - `/parse-skewl-notes` runs parse, `/present`, and optional input archive.
 - `/ezLectures` renders a faithful aesthetic HTML view from an existing `lecture.json`.
+- The Pi package registers `/transcribe`, `pps_transcribe`, and `/skill:transcribe`; setup and absolute runtime/model environment variables are in `README.md`.
 
 ## GUI
 

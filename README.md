@@ -13,6 +13,7 @@ lecture.lecture/
   lecture.json           # canonical structured Document
   lecture.html           # plain program view
   lecture.md             # same pairing in Markdown
+  transcript.md          # faithful timestamped paragraphs, including audio-only input
   lecture.present.html   # teaching notes (pps present / Parse + Notes)
   stills/
     still-001.png
@@ -113,10 +114,14 @@ python3 -m podleparsesskewl parse path/to/lecture.mp4 \
   -o ./out/lecture \
   --transcript path/to/lecture.srt
 
-# transcribe audio with cached/local model files only
-python3 -m podleparsesskewl parse path/to/lecture.mp4 \
-  --offline-transcription \
-  --local-files-root ./models
+# transcribe local audio/video with cache-only ASR, progress, and bounded JSON output
+python3 -m podleparsesskewl transcribe path/to/lecture.mp4 \
+  --local-files-root /absolute/path/to/models \
+  --jsonl-progress
+
+# force a provisioned model directory instead of a named cache entry
+python3 -m podleparsesskewl transcribe path/to/lecture.mp3 \
+  --whisper-model-path /absolute/path/to/faster-whisper-model
 
 # rebuild the plain HTML from an existing Document
 python3 -m podleparsesskewl render ./out/lecture/lecture.json
@@ -131,9 +136,37 @@ python3 -m podleparsesskewl present ./out/lecture/lecture.json
 python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive-dir ./archive
 ```
 
+`transcribe` is the local long-job interface. It defaults to offline model loading, 1.5-second cue-gap paragraphs, 30-second visual lookback grouping, and CUDA/fp16 when CTranslate2 reports a CUDA device. It falls back to CPU/int8 when CUDA is unavailable. Audio-only media writes `lecture.json` with empty Stills/Sections and never invents a black Still. The final JSON contains artifact paths, counts, timings, provenance, and at most 40 short cue excerpts; the complete transcript remains in `transcript.md` and `lecture.json`.
+
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
 End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is parse + present, then a move of the Recording into a unique archive folder. Use `--no-archive` to leave the input in place. The GUI Parse button is `parse`; Parse + Notes is `notes`.
+
+### Pi package
+
+Install this checkout as a Pi package, then point it at an installed PPS executable and a durable absolute model cache:
+
+```bash
+python3 -m venv "$HOME/.local/share/pps/venv"
+"$HOME/.local/share/pps/venv/bin/pip" install -e "/absolute/path/to/PodleParsesSkewl[transcribe]"
+pi install /absolute/path/to/PodleParsesSkewl
+
+export PPS_EXECUTABLE="$HOME/.local/share/pps/venv/bin/pps"
+export PPS_MODEL_CACHE="/absolute/path/to/huggingface/hub"
+# optional: PPS_MODEL=small, PPS_MODEL_PATH=/absolute/model/snapshot,
+#           PPS_DEVICE=cuda|cpu|auto, PPS_OUTPUT_ROOT=/absolute/output/root
+```
+
+Use `/transcribe /absolute/path/to/lecture.mp4` interactively or call `pps_transcribe` from a frontend agent. The extension passes argv without a shell, allows one job per Pi session, streams honest phases, and terminates its owned Python/ffmpeg process tree on abort or session shutdown. It accepts local files only and never uploads media or falls back to cloud ASR.
+
+On this WSL host, `/usr/lib/wsl/lib/libcuda.so` is present but `nvidia-smi` cannot load `libnvidia-ml.so`, and the system Python has neither CTranslate2 nor faster-whisper. GPU ASR is therefore not claimed for that runtime. The compatible caches currently present on the Windows filesystem are:
+
+```text
+/mnt/c/Users/ayden/.cache/huggingface/hub/models--Systran--faster-whisper-base/snapshots/ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66
+/mnt/c/Users/ayden/.cache/huggingface/hub/models--Systran--faster-whisper-small/snapshots/536b0662742c02347bc0e980a01041f333bce120
+```
+
+Provision faster-whisper in the selected WSL Python and run `pps doctor` before relying on WSL GPU. If CTranslate2 still reports zero CUDA devices, use `PPS_DEVICE=cpu` honestly. A native Windows Python may use those same snapshot paths in Windows form, but native Windows process and GPU validation remains required before calling it supported.
 
 ### Transcripts
 
