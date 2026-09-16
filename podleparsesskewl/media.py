@@ -171,6 +171,12 @@ def extract_stills_png(
 
 
 def _sampling_filter(fps: float) -> str:
+    """Keep signatures and PNG selection on the same zero-based frame grid.
+
+    Seeking by timestamp can select a different source frame between ticks;
+    both passes must instead use this filter and the same sampled frame index.
+    See the sub-frame offset regression in tests/test_pipeline.py.
+    """
     return f"fps={fps}:start_time=0:round=up"
 
 

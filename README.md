@@ -1,12 +1,12 @@
 # PodleParsesSkewl
 
-Review reconstruction for lecture recordings. One MP4 in; a structured Lecture Document out that pairs **what was said** with **what was shown**.
+Review reconstruction for lecture recordings. One local audio/video file in; a structured Lecture Document out that pairs **what was said** with **what was shown**, when video is present.
 
-The program is a standalone CLI with a small GUI. Sidecar-based parsing is fully offline. Audio transcription runs locally; the default named Whisper model may be downloaded once, then reused from local disk. Project skills `/ezLectures` and `/present` turn the same Document into a faithful HTML review or concise teaching notes. `/parse-skewl` and `/parse-skewl-notes` point agents at this repo's parser.
+The program is a standalone CLI with a small GUI. Sidecar-based parsing is fully offline. Audio transcription runs locally; see [Optional local transcription](#optional-local-transcription) for model provisioning and offline defaults. Project skills `/ezLectures` and `/present` turn the same Document into a faithful HTML review or concise teaching notes. `/parse-skewl` and `/parse-skewl-notes` point agents at this repo's parser.
 
 ## What you get
 
-One Recording (an MP4) is one Lecture. The program writes a folder:
+For each Recording, the program writes a folder:
 
 ```
 lecture.lecture/
@@ -81,13 +81,13 @@ The release build includes the core CLI and Podle-themed GUI, and supports capti
 
 ### Optional local transcription
 
-If the MP4 has no caption sidecar, install a local engine:
+If the Recording has no caption sidecar, install a local engine:
 
 ```bash
 python3 -m pip install -e ".[transcribe]"   # faster-whisper
 ```
 
-The first audio run with the default named model (`base`) may download the model into `./models`. That cache is just model files kept on local disk, so later runs - including batch or multiple-file runs - reuse them and do not download again. Caching does not make transcription slower except for normal disk access. Lecture files are never uploaded.
+For `parse` and `notes`, the first audio run with the default named model (`base`) may download the model into `./models`. That cache is just model files kept on local disk, so later runs - including batch or multiple-file runs - reuse them and do not download again. Caching does not make transcription slower except for normal disk access. Lecture files are never uploaded.
 
 Model recommendations:
 
@@ -98,7 +98,11 @@ Model recommendations:
 
 Use `--whisper-model <tiny|base|small|medium|large...>` to choose a named model, `--local-files-root <path>` to choose where downloaded model files are stored, `--offline-transcription` to require cache-only operation, or `--whisper-model-path <path>` to use an explicit existing local model file or directory. After a model is present in `./models` or your chosen local-files root, `--offline-transcription` performs audio transcription without network access.
 
-`./models` is the project-visible model location. It is ignored by git and can hold real model files, a symlink to another model cache, or symlinked entries that point at model files or directories you already have elsewhere. For example, once you find an existing transcription-model folder, you can keep this project local-first while reusing it with `ln -s /path/to/transcription-model ./models` or by linking selected files inside `./models`. If you do not want symlinks, pass the existing location directly with `--local-files-root /path/to/transcription-model` or use `--whisper-model-path /path/to/model-file-or-directory`.
+`transcribe` is cache-only: it never provisions models and defaults to `~/.cache/podleparsesskewl/models`, not `./models`. Point `--local-files-root` at an already provisioned cache or `--whisper-model-path` at an existing model snapshot. The Pi bridge requires absolute runtime and cache/model paths; see [Pi package](#pi-package).
+
+With faster-whisper, `--device auto` selects CUDA/float16 when CTranslate2 reports a GPU, otherwise CPU/int8. A CUDA initialization failure is reported, not retried silently on CPU; use `--device cpu` to force CPU or `--device cuda` to require CUDA. These device controls apply to faster-whisper, not the legacy local engine fallbacks.
+
+`./models` is the project-visible model location for ordinary parsing. It is ignored by git and can hold real model files, a symlink to another model cache, or symlinked entries that point at model files or directories you already have elsewhere. For example, once you find an existing transcription-model folder, you can keep this project local-first while reusing it with `ln -s /path/to/transcription-model ./models` or by linking selected files inside `./models`. If you do not want symlinks, pass the existing location directly with `--local-files-root /path/to/transcription-model` or use `--whisper-model-path /path/to/model-file-or-directory`.
 
 ## Usage
 
@@ -136,7 +140,13 @@ python3 -m podleparsesskewl present ./out/lecture/lecture.json
 python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive-dir ./archive
 ```
 
-`transcribe` is the local long-job interface. It defaults to offline model loading, 1.5-second cue-gap paragraphs, 30-second visual lookback grouping, and CUDA/fp16 when CTranslate2 reports a CUDA device. It falls back to CPU/int8 when CUDA is unavailable. Audio-only media writes `lecture.json` with empty Stills/Sections and never invents a black Still. The final JSON contains artifact paths, counts, timings, provenance, and at most 40 short cue excerpts; the complete transcript remains in `transcript.md` and `lecture.json`.
+`transcribe` is the explicit-local-file long-job interface, including MP3 and audio-only tracks. It does not use lecture discovery or configuration files. Without `-o`, output is `<stem>.lecture` beside the input. `--jsonl-progress` emits checking/processing/validating/done phases, not percentages, before the final JSON result.
+
+`transcript.md` preserves every cue in order, joining text without rewriting. Paragraphs break at a cue gap of at least 1.5 seconds, an accepted Still boundary, or before adding a cue would exceed 120 words. A single oversized cue stays intact. CLI overrides are `--pause-seconds` and `--paragraph-words`; visual boundaries never split a cue.
+
+The fixed `lookback:30s` visual policy compares against the sample nearest 30 seconds earlier (the earliest sample during warmup). Held changes are coalesced; local transitions retain returns to a prior accepted appearance, while rejected flashes do not duplicate Stills. Ordinary `parse`/`notes` retain anchor-based detection. Implementation details live in `podleparsesskewl/stills.py`.
+
+Audio-only media, including attached cover artwork, writes `lecture.json` with empty Stills/Sections and never invents a black Still. Read `transcript.md` for its speech, since the plain paired views are Still-led. The final JSON contains absolute artifact paths, counts, timings, provenance, and at most 40 short paragraph excerpts. Its `counts.sections` counts transcript paragraphs, not the Document's Still-linked Sections. The complete transcript remains in `transcript.md` and `lecture.json`.
 
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
@@ -157,7 +167,7 @@ export PPS_MODEL_CACHE="/absolute/path/to/huggingface/hub"
 #           PPS_DEVICE=cuda|cpu|auto, PPS_OUTPUT_ROOT=/absolute/output/root
 ```
 
-Use `/transcribe /absolute/path/to/lecture.mp4` interactively or call `pps_transcribe` from a frontend agent. Cancel an interactive command with Ctrl+Shift+X or `/transcribe --cancel`; tool calls also honor the agent abort signal. The extension passes argv without a shell, allows one job per Pi session, streams honest phases, and terminates its owned Python/ffmpeg process tree on abort or session shutdown. It accepts local files only and never uploads media or falls back to cloud ASR.
+Use `/transcribe /absolute/path/to/lecture.mp4` interactively or call `pps_transcribe` from a frontend agent. Cancel an interactive command with Ctrl+Shift+X or `/transcribe --cancel`; tool calls also honor the agent abort signal. The extension passes argv without a shell, allows one job per Pi session, streams progress phases, and terminates its owned Python/ffmpeg process tree on abort or session shutdown. It accepts local files only and never uploads media or falls back to cloud ASR. The tool's optional `output` must name a new directory; otherwise a unique run directory is created under `PPS_OUTPUT_ROOT` (default `~/.local/share/podleparsesskewl/runs`). Successful artifacts persist. Failure or cancellation removes the bridge-owned run directory after teardown; the input is untouched. Direct CLI runs do not provide this bridge-owned cleanup contract.
 
 On this WSL host, `/usr/lib/wsl/lib/libcuda.so` is present but `nvidia-smi` cannot load `libnvidia-ml.so`, and the system Python has neither CTranslate2 nor faster-whisper. GPU ASR is therefore not claimed for that runtime. The compatible caches currently present on the Windows filesystem are:
 
@@ -185,7 +195,7 @@ Provision faster-whisper in the selected WSL Python and run `pps doctor` before 
 
 ### Transcripts
 
-The program looks next to the MP4 for a transcript sidecar with the same stem, such as `lecture.srt`, `lecture.vtt`, or `lecture.json` beside `lecture.mp4`. If one is present, it is used and audio is not transcribed. If none is present, a local engine is required.
+The program looks next to the Recording for a transcript sidecar with the same stem, such as `lecture.srt`, `lecture.vtt`, or `lecture.json` beside `lecture.mp4`. If one is present, it is used and audio is not transcribed. If none is present, a local engine is required.
 
 A JSON sidecar must be a list of cues, or an object holding a `cues` or `segments` list, where each cue has `start`/`end` (seconds or `HH:MM:SS.mmm`) and `text`.
 
@@ -221,7 +231,7 @@ Agents working on a machine that cannot see the Windows folder should retrieve t
 
 ### Where the lecture directory comes from
 
-Explicit settings beat ambient ones, in this order:
+For commands that use lecture configuration (`transcribe` does not), explicit settings beat ambient ones, in this order:
 
 1. `--lectures-dir <path>`
 2. `--config <file>` (an explicitly named config file wins over the environment)
@@ -274,13 +284,13 @@ nix-shell --run 'python3 -m unittest discover -s tests -v'
 python3 -m unittest discover -s tests -v
 ```
 
-With the Pi package's peer dependencies available, run `node --test tests/test_pi_bridge.mjs` for the registered tool/command lifecycle regressions (POSIX).
+With Node.js 22.18+ or 24+ for native TypeScript stripping and `module.registerHooks`, and the Pi package's peer dependencies available, run `node --test tests/test_pi_bridge.mjs` for the registered tool/command lifecycle regressions (POSIX).
 
 Core tests use deterministic fixtures (captions, synthetic frame signatures, Document rendering). The MP4 E2E builds a tiny two-Still file and parses it; it is skipped only when ffmpeg is missing from that process, which is a local-setup gap, not a substitute for running the media test.
 
 ## Planning and assessments
 
-- [Pi `/transcribe` reuse assessment](docs/planning/pi-transcribe-reuse-assessment.md) records the revision-pinned reuse findings, current gaps, and proposed V1 acceptance tests. It is a proposal, not implemented or approved scope.
+- [Pi `/transcribe` reuse assessment](docs/planning/pi-transcribe-reuse-assessment.md) records historical revision-pinned reuse findings and proposed V1 acceptance tests. It is not the current implementation contract; use the usage and Pi package sections above.
 
 ## Domain language
 

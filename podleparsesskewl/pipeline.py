@@ -67,7 +67,7 @@ def parse_recording(
     env: Environment | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> ParseResult:
-    """Process one MP4 into a Lecture Document and the plain HTML/Markdown views."""
+    """Process local audio/video into a Document, paired views, and transcript Report."""
     notify = progress or (lambda _phase: None)
     notify("checking")
     recording = recording.resolve()

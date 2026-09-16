@@ -31,7 +31,7 @@ Windows launcher: `podleparsesskewl/gui.py`. Next-step issue plan and open capta
 
 ## Constraints
 
-- One MP4 is one Lecture. The canonical result is `lecture.json`.
+- Recording/Lecture cardinality and the canonical Document are defined in `CONTEXT.md`.
 - Core path is local. Do not add a required cloud API.
 - Do not treat "slide" as a second extracted object. The extracted visual is a Still.
 - v1 still detection uses `DEFAULT_CHANGE_RATIO = 0.15` so a text-heavy full-slide swap splits and a typical one-bullet progressive build stays merged. v2 may split a held build only when the added content is large enough and/or held long enough; those thresholds are not designed yet. See `podleparsesskewl/stills.py`.

@@ -5,7 +5,7 @@ Review reconstruction of a lecture Recording: what was said, paired with what wa
 ## Language
 
 **Recording**:
-The input media file. In v1 that is one MP4.
+The local input audio or video file, including audio-only media.
 _Avoid_: video, lecture file, source file
 
 **Lecture**:
