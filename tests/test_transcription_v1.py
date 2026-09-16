@@ -195,7 +195,10 @@ class AgentContractTests(unittest.TestCase):
                      ["file.mp3", "--lectures-dir", "lectures"],
                      ["file.mp3", "--default-output-dir", "results"],
                      ["file.mp3", "--title", "Custom"],
-                     ["file.mp3", "--keep-work"]):
+                     ["file.mp3", "--keep-work"],
+                     ["file.mp3", "--sample-fps", "2"],
+                     ["file.mp3", "--change-ratio", "0.3"],
+                     ["file.mp3", "--min-hold-seconds", "4"]):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 parser.parse_args(["transcribe", *args])
         args = parser.parse_args(["transcribe", "file.mp3"])
@@ -203,12 +206,20 @@ class AgentContractTests(unittest.TestCase):
         self.assertEqual(args.visual_lookback_seconds, 30)
         self.assertIsNone(args.title)
         self.assertFalse(args.keep_work)
+        self.assertEqual((args.sample_fps, args.change_ratio, args.min_hold_seconds), (1.0, 0.15, 1.5))
         for command in ("parse", "notes"):
+            defaults = parser.parse_args([command, "file.mp4"])
+            self.assertEqual(
+                (defaults.sample_fps, defaults.change_ratio, defaults.min_hold_seconds),
+                (1.0, 0.15, 1.5),
+            )
             args = parser.parse_args([
                 command, "--latest", "--title", "Custom", "--keep-work",
                 "--config", "settings.toml", "--lectures-dir", "lectures",
                 "--default-output-dir", "results",
+                "--sample-fps", "2", "--change-ratio", "0.3", "--min-hold-seconds", "4",
             ])
+            self.assertEqual((args.sample_fps, args.change_ratio, args.min_hold_seconds), (2, 0.3, 4))
             self.assertTrue(args.latest)
             self.assertIsNone(args.visual_lookback_seconds)
             self.assertEqual(args.title, "Custom")

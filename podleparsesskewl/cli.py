@@ -209,11 +209,16 @@ def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = Fa
 
 
 def _add_parse_option_flags(parser: argparse.ArgumentParser, *, explicit: bool = False) -> None:
-    parser.add_argument("--sample-fps", type=float, default=DEFAULT_SAMPLE_FPS)
-    parser.add_argument("--change-ratio", type=float, default=DEFAULT_CHANGE_RATIO)
-    parser.add_argument("--min-hold-seconds", type=float, default=DEFAULT_MIN_HOLD_SECONDS)
-    parser.set_defaults(keep_work=False)
+    parser.set_defaults(
+        sample_fps=DEFAULT_SAMPLE_FPS,
+        change_ratio=DEFAULT_CHANGE_RATIO,
+        min_hold_seconds=DEFAULT_MIN_HOLD_SECONDS,
+        keep_work=False,
+    )
     if not explicit:
+        parser.add_argument("--sample-fps", type=float)
+        parser.add_argument("--change-ratio", type=float)
+        parser.add_argument("--min-hold-seconds", type=float)
         parser.add_argument(
             "--keep-work",
             action="store_true",
