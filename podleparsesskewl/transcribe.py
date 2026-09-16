@@ -26,6 +26,7 @@ class TranscriptionOptions:
     model_path: Path | None = None
     local_files_root: Path = DEFAULT_LOCAL_FILES_ROOT
     offline: bool = False
+    device: str = "auto"
 
     def __post_init__(self) -> None:
         if self.model_path is not None:
@@ -37,6 +38,8 @@ class TranscriptionOptions:
                 )
             object.__setattr__(self, "model_path", model_path)
         object.__setattr__(self, "local_files_root", Path(self.local_files_root))
+        if self.device not in {"auto", "cuda", "cpu"}:
+            raise PpsError("Whisper device must be auto, cuda, or cpu")
 
     @property
     def model_reference(self) -> str:
@@ -100,6 +103,10 @@ def _run_engine(wav: Path, options: TranscriptionOptions) -> Transcript:
         import faster_whisper
     except ImportError:
         faster_whisper = None
+    except Exception as exc:
+        raise PpsError(
+            f"faster-whisper is installed but could not be imported: {type(exc).__name__}: {exc}"
+        ) from exc
     if faster_whisper is not None:
         return _faster_whisper(wav, faster_whisper, options)
 
@@ -147,15 +154,16 @@ def _engine_failures(name: str) -> Iterator[None]:
 
 def _faster_whisper(wav: Path, module, options: TranscriptionOptions) -> Transcript:
     model_ref = options.model_reference
-    name = f"faster-whisper:{model_ref}"
+    device, compute_type = _faster_whisper_device(options.device)
+    name = f"faster-whisper:{model_ref}:{device}"
     cues = []
     with _engine_failures(name):
         if options.model_path is None:
             options.local_files_root.mkdir(parents=True, exist_ok=True)
         model = module.WhisperModel(
             model_ref,
-            device="cpu",
-            compute_type="int8",
+            device=device,
+            compute_type=compute_type,
             download_root=str(options.local_files_root),
             local_files_only=options.offline,
         )
@@ -170,7 +178,22 @@ def _faster_whisper(wav: Path, module, options: TranscriptionOptions) -> Transcr
                         text=text,
                     )
                 )
-    return Transcript(cues=tuple(cues), source=f"audio:faster-whisper:{model_ref}")
+    return Transcript(cues=tuple(cues), source=f"audio:faster-whisper:{model_ref}:{device}")
+
+
+def _faster_whisper_device(requested: str) -> tuple[str, str]:
+    if requested == "cpu":
+        return "cpu", "int8"
+    if requested == "cuda":
+        return "cuda", "float16"
+    try:
+        import ctranslate2
+
+        if ctranslate2.get_cuda_device_count() > 0:
+            return "cuda", "float16"
+    except (ImportError, OSError, RuntimeError):
+        pass
+    return "cpu", "int8"
 
 
 def _openai_whisper(wav: Path, module, options: TranscriptionOptions) -> Transcript:

@@ -49,7 +49,7 @@ class StillSegmentationTests(unittest.TestCase):
         self.assertEqual(intervals[0].end_seconds, 5.0)
         self.assertEqual(intervals[1].start_seconds, 5.0)
         self.assertEqual(intervals[1].end_seconds, 10.0)
-        self.assertEqual(intervals[1].representative_seconds, 5.0)
+        self.assertEqual(intervals[1].representative_seconds, 6.0)
 
     def test_webcam_bubble_flicker_does_not_split_a_stable_slide(self) -> None:
         slide = _white_slide(seed=1, bullets=4)

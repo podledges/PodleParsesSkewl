@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from podleparsesskewl import __version__
@@ -20,11 +22,18 @@ from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.pipeline import (
     ParseOptions,
     copy_still_images,
+    default_output_dir,
     load_document,
     parse_recording,
 )
-from podleparsesskewl.report import pairing_problems, write_plain_views
-from podleparsesskewl.stills import DEFAULT_CHANGE_RATIO, DEFAULT_MIN_HOLD_SECONDS, DEFAULT_SAMPLE_FPS
+from podleparsesskewl.report import group_transcript, pairing_problems, write_plain_views
+from podleparsesskewl.stills import (
+    DEFAULT_CHANGE_RATIO,
+    DEFAULT_LOOKBACK_SECONDS,
+    DEFAULT_MIN_HOLD_SECONDS,
+    DEFAULT_SAMPLE_FPS,
+)
+from podleparsesskewl.timefmt import format_clock
 from podleparsesskewl.transcribe import DEFAULT_LOCAL_FILES_ROOT, DEFAULT_WHISPER_MODEL, TranscriptionOptions
 from podleparsesskewl.workflow import (
     parse_and_present,
@@ -44,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_list(args)
         if args.command == "parse":
             return _cmd_parse(args)
+        if args.command == "transcribe":
+            return _cmd_transcribe(args)
         if args.command == "present":
             return _cmd_present(args)
         if args.command == "notes":
@@ -80,10 +91,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory to list (defaults to the configured lecture directory)",
     )
 
-    parse = sub.add_parser("parse", help="process one MP4 into a Lecture Document and plain HTML")
+    parse = sub.add_parser("parse", help="process one video into a Lecture Document and plain HTML")
     _add_config_flags(parse)
     _add_recording_flags(parse)
     _add_parse_option_flags(parse)
+
+    transcribe = sub.add_parser(
+        "transcribe",
+        help="transcribe one local audio/video file into bounded machine output and local artifacts",
+    )
+    _add_recording_flags(transcribe, explicit=True)
+    _add_parse_option_flags(transcribe, explicit=True)
+    transcribe.set_defaults(
+        offline_transcription=True,
+        local_files_root=Path.home() / ".cache" / "podleparsesskewl" / "models",
+        visual_lookback_seconds=DEFAULT_LOOKBACK_SECONDS,
+    )
+    transcribe.add_argument(
+        "--jsonl-progress",
+        action="store_true",
+        help="emit JSON progress events before the final JSON result",
+    )
 
     present = sub.add_parser(
         "present",
@@ -150,25 +178,29 @@ def _add_config_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_recording_flags(parser: argparse.ArgumentParser) -> None:
+def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = False) -> None:
     parser.add_argument(
         "recording",
-        nargs="?",
+        **({} if explicit else {"nargs": "?"}),
         type=Path,
-        help="path to an MP4 Recording (omit with --latest)",
+        help="path to a local audio/video Recording",
     )
-    parser.add_argument(
-        "--latest",
-        action="store_true",
-        help="use the newest MP4 in the configured lecture directory",
-    )
+    if not explicit:
+        parser.add_argument(
+            "--latest",
+            action="store_true",
+            help="use the newest MP4 in the configured lecture directory",
+        )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        help="output directory (default: configured output_dir/<stem>.lecture, else next to the file)",
+        help=("output directory (default: <stem>.lecture next to the file)" if explicit else
+              "output directory (default: configured output_dir/<stem>.lecture, else next to the file)"),
     )
-    parser.add_argument("--title", help="Lecture title (default: recording filename)")
+    parser.set_defaults(title=None)
+    if not explicit:
+        parser.add_argument("--title", help="Lecture title (default: recording filename)")
     parser.add_argument(
         "--transcript",
         type=Path,
@@ -176,15 +208,22 @@ def _add_recording_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_parse_option_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--sample-fps", type=float, default=DEFAULT_SAMPLE_FPS)
-    parser.add_argument("--change-ratio", type=float, default=DEFAULT_CHANGE_RATIO)
-    parser.add_argument("--min-hold-seconds", type=float, default=DEFAULT_MIN_HOLD_SECONDS)
-    parser.add_argument(
-        "--keep-work",
-        action="store_true",
-        help="keep this run's intermediate ffmpeg files in its _work-* folder under the output directory",
+def _add_parse_option_flags(parser: argparse.ArgumentParser, *, explicit: bool = False) -> None:
+    parser.set_defaults(
+        sample_fps=DEFAULT_SAMPLE_FPS,
+        change_ratio=DEFAULT_CHANGE_RATIO,
+        min_hold_seconds=DEFAULT_MIN_HOLD_SECONDS,
+        keep_work=False,
     )
+    if not explicit:
+        parser.add_argument("--sample-fps", type=float)
+        parser.add_argument("--change-ratio", type=float)
+        parser.add_argument("--min-hold-seconds", type=float)
+        parser.add_argument(
+            "--keep-work",
+            action="store_true",
+            help="keep this run's intermediate ffmpeg files in its _work-* folder under the output directory",
+        )
     parser.add_argument(
         "--whisper-model",
         default=DEFAULT_WHISPER_MODEL,
@@ -206,6 +245,15 @@ def _add_parse_option_flags(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="use cached/local Whisper model files only; never download a model",
     )
+    parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "cpu"),
+        default="auto",
+        help="ASR device (default: CUDA when available, otherwise CPU)",
+    )
+    parser.add_argument("--pause-seconds", type=float, default=1.5)
+    parser.add_argument("--paragraph-words", type=int, default=120)
+    parser.set_defaults(visual_lookback_seconds=None)
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -265,6 +313,70 @@ def _cmd_parse(args: argparse.Namespace) -> int:
     output = resolve_output_dir(recording, args.output, config)
     result = parse_recording(recording, _parse_options(args, output))
     _print_parse(result)
+    return 0
+
+
+def _cmd_transcribe(args: argparse.Namespace) -> int:
+    recording = args.recording
+    output = args.output if args.output is not None else default_output_dir(recording)
+    started = time.monotonic()
+
+    def progress(phase: str) -> None:
+        if args.jsonl_progress:
+            print(json.dumps({"type": "progress", "phase": phase, "elapsed_seconds": round(time.monotonic() - started, 3)}), flush=True)
+
+    result = parse_recording(recording, _parse_options(args, output), progress=progress)
+    groups = group_transcript(
+        result.document.transcript.cues,
+        pause_seconds=args.pause_seconds,
+        max_words=args.paragraph_words,
+        visual_boundaries=tuple(still.start_seconds for still in result.document.stills[1:]),
+    )
+    payload = {
+        "type": "result",
+        "schema": "podleparsesskewl.transcription/v1",
+        "artifacts": {
+            "document": str(result.document_path.resolve()),
+            "transcript": str(result.transcript_path.resolve()),
+            "html": str(result.html_path.resolve()),
+            "markdown": str(result.markdown_path.resolve()),
+        },
+        "source": str(recording.resolve()),
+        "duration_seconds": result.document.source.duration_seconds,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+        "counts": {
+            "cues": len(result.document.transcript.cues),
+            "sections": len(groups),
+            "stills": len(result.document.stills),
+        },
+        "provenance": {
+            "transcript_source": result.document.source.transcript_source,
+            "offline": args.offline_transcription,
+            "model": str(args.whisper_model_path or args.whisper_model),
+            "model_cache": str(args.local_files_root.resolve()),
+            "device_request": args.device,
+            "device_used": (
+                result.document.source.transcript_source.rsplit(":", 1)[-1]
+                if result.document.source.transcript_source.startswith("audio:faster-whisper:")
+                else "sidecar-or-engine-defined"
+            ),
+            "visual_policy": (
+                f"lookback:{args.visual_lookback_seconds:g}s"
+                if args.visual_lookback_seconds is not None
+                else "anchor"
+            ),
+        },
+        "index": [
+            {
+                "start_seconds": group.start_seconds,
+                "timestamp": format_clock(group.start_seconds),
+                "excerpt": " ".join(group.text.split()[:12])[:200],
+            }
+            for group in groups[:40]
+        ],
+        "index_truncated": len(groups) > 40,
+    }
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
     return 0
 
 
@@ -347,11 +459,15 @@ def _parse_options(args: argparse.Namespace, output: Path) -> ParseOptions:
         change_ratio=args.change_ratio,
         min_hold_seconds=args.min_hold_seconds,
         keep_work=args.keep_work,
+        visual_lookback_seconds=args.visual_lookback_seconds,
+        pause_seconds=args.pause_seconds,
+        paragraph_words=args.paragraph_words,
         transcription=TranscriptionOptions(
             model=args.whisper_model,
             model_path=args.whisper_model_path,
             local_files_root=args.local_files_root,
             offline=args.offline_transcription,
+            device=args.device,
         ),
     )
 
@@ -360,6 +476,8 @@ def _print_parse(result) -> None:
     print(f"Document  {result.document_path}")
     print(f"HTML      {result.html_path}")
     print(f"Markdown  {result.markdown_path}")
+    transcript_path = getattr(result, "transcript_path", result.document_path.parent / "transcript.md")
+    print(f"Transcript {transcript_path}")
     print(f"Stills    {len(result.document.stills)}")
     print(f"Cues      {len(result.document.transcript.cues)}")
 

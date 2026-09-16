@@ -53,7 +53,7 @@ def probe_recording(path: Path, env: Environment) -> Probe:
     has_video = False
     for stream in payload.get("streams") or []:
         kind = stream.get("codec_type")
-        if kind == "video":
+        if kind == "video" and (stream.get("disposition") or {}).get("attached_pic") != 1:
             has_video = True
             if stream.get("width"):
                 width = int(stream["width"])
@@ -63,6 +63,8 @@ def probe_recording(path: Path, env: Environment) -> Probe:
                 duration = _optional_seconds(stream.get("duration")) or 0.0
         elif kind == "audio":
             has_audio = True
+            if duration == 0.0:
+                duration = _optional_seconds(stream.get("duration")) or 0.0
     return Probe(
         duration_seconds=duration,
         width=width,
@@ -106,7 +108,7 @@ def sample_signatures(
         "-i",
         str(recording),
         "-vf",
-        f"fps={fps},scale={width}:{height}:flags=fast_bilinear,format=gray",
+        f"{_sampling_filter(fps)},scale={width}:{height}:flags=fast_bilinear,format=gray",
         "-f",
         "rawvideo",
         "-pix_fmt",
@@ -135,34 +137,47 @@ def sample_signatures(
     return frames
 
 
-def extract_still_png(
+def extract_stills_png(
     recording: Path,
-    timestamp_seconds: float,
-    dest: Path,
+    timestamps: list[float],
+    output_dir: Path,
+    work_dir: Path,
     env: Environment,
+    *,
+    fps: float = DEFAULT_SAMPLE_FPS,
 ) -> None:
+    if not timestamps:
+        return
     if not env.ffmpeg.found or env.ffmpeg.path is None:
         raise PpsError("ffmpeg is required to extract Still images")
-    with writing(f"the folder for {dest}"):
-        dest.parent.mkdir(parents=True, exist_ok=True)
+    from podleparsesskewl.document import still_image_name
+
+    with writing(f"the Still images in {output_dir}"):
+        (output_dir / "stills").mkdir(parents=True, exist_ok=True)
+        selection = "+".join(f"eq(n\\,{round(timestamp * fps)})" for timestamp in timestamps)
+        filters = work_dir / "stills.filter"
+        filters.write_text(f"{_sampling_filter(fps)},select={selection}", encoding="utf-8")
     command = [
-        str(env.ffmpeg.path),
-        "-v",
-        "error",
-        "-ss",
-        f"{max(0.0, timestamp_seconds):.3f}",
-        "-i",
-        str(recording),
-        "-frames:v",
-        "1",
-        "-update",
-        "1",
-        "-y",
-        str(dest),
+        str(env.ffmpeg.path), "-v", "error", "-i", str(recording),
+        "-filter_script:v", str(filters), "-fps_mode", "passthrough",
+        "-frames:v", str(len(timestamps)), "-y",
+        str(output_dir / "stills" / "still-%03d.png"),
     ]
     _run(command, "ffmpeg still extract")
-    if not dest.is_file() or dest.stat().st_size == 0:
-        raise PpsError(f"ffmpeg did not write a Still image at {dest}")
+    for index in range(1, len(timestamps) + 1):
+        dest = output_dir / still_image_name(index)
+        if not dest.is_file() or dest.stat().st_size == 0:
+            raise PpsError(f"ffmpeg did not write a Still image at {dest}")
+
+
+def _sampling_filter(fps: float) -> str:
+    """Keep signatures and PNG selection on the same zero-based frame grid.
+
+    Seeking by timestamp can select a different source frame between ticks;
+    both passes must instead use this filter and the same sampled frame index.
+    See the sub-frame offset regression in tests/test_pipeline.py.
+    """
+    return f"fps={fps}:start_time=0:round=up"
 
 
 def extract_audio_wav(

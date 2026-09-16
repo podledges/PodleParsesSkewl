@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass
 
 DEFAULT_SAMPLE_WIDTH = 160
@@ -11,6 +12,7 @@ DEFAULT_BLOCK_THRESHOLD = 0.12
 DEFAULT_CHANGE_RATIO = 0.15
 DEFAULT_MIN_HOLD_SECONDS = 1.5
 DEFAULT_SAMPLE_FPS = 1.0
+DEFAULT_LOOKBACK_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ def segment_stills(
     min_hold_seconds: float = DEFAULT_MIN_HOLD_SECONDS,
     block: int = DEFAULT_BLOCK,
     block_threshold: float = DEFAULT_BLOCK_THRESHOLD,
+    lookback_seconds: float | None = None,
 ) -> list[StillInterval]:
     """Group sampled frames into Still intervals.
 
@@ -99,6 +102,7 @@ def segment_stills(
     current_start = max(0.0, frames[0].time_seconds)
     current_samples = frames[0].samples
     current_rep = frames[0].time_seconds
+    frame_times = [frame.time_seconds for frame in frames]
     width = frames[0].width
     height = frames[0].height
     starts: list[tuple[float, float]] = []
@@ -106,15 +110,41 @@ def segment_stills(
     index = 1
     while index < len(frames):
         frame = frames[index]
+        reference = current_samples
+        if lookback_seconds is not None:
+            target = frame.time_seconds - lookback_seconds
+            position = bisect_left(frame_times, target, 0, index)
+            candidates = {max(0, position - 1), min(index - 1, position)}
+            nearest = min(candidates, key=lambda at: abs(frame_times[at] - target))
+            reference = frames[nearest].samples
         ratio = block_change_ratio(
-            current_samples,
+            reference,
             frame.samples,
             width,
             height,
             block=block,
             block_threshold=block_threshold,
         )
-        if ratio >= change_ratio:
+        changed = ratio >= change_ratio
+        if lookback_seconds is not None:
+            current_changed = block_change_ratio(
+                current_samples,
+                frame.samples,
+                width,
+                height,
+                block=block,
+                block_threshold=block_threshold,
+            ) >= change_ratio
+            local_changed = block_change_ratio(
+                frames[index - 1].samples,
+                frame.samples,
+                width,
+                height,
+                block=block,
+                block_threshold=block_threshold,
+            ) >= change_ratio
+            changed = current_changed and (local_changed or changed)
+        if changed:
             hold_until = frame.time_seconds + min_hold_seconds
             new_samples = frame.samples
             hold_index = index
@@ -136,7 +166,7 @@ def segment_stills(
                 starts.append((current_start, current_rep))
                 current_start = frame.time_seconds
                 current_samples = new_samples
-                current_rep = frame.time_seconds
+                current_rep = frames[max(index, hold_index - 1)].time_seconds
                 index = max(hold_index, index + 1)
                 continue
         index += 1
