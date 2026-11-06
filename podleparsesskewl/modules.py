@@ -23,6 +23,7 @@ SHORT = re.compile(r"[A-Za-z0-9 &+\-]{1,32}")
 STOP_WORDS = frozenset("the a an module mod course class one for and of to in on".split())
 STATUSES = ("active", "paused", "done")
 IGNORE_RULES = ("*/material/", "*/lectures/", ".DS_Store")
+RECEIVED_DIRS = frozenset(("material", "lectures"))
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class SyncResult:
     summary: str
     warnings: tuple[str, ...] = ()
     conflicts: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
 
     @property
     def exit_code(self) -> int:
@@ -330,10 +332,28 @@ def _in_rebase(root: Path) -> bool:
     return False
 
 
-def _privacy_problems(root: Path) -> list[str]:
+def _received_tracked(root: Path) -> set[str]:
+    """Tracked or staged paths inside the ignored `<module>/material|lectures/` folders."""
     tracked = _git(root, "ls-files", "-z").stdout.split("\0")
-    return [f"received material must not be tracked: {path}" for path in tracked
-            if {"material", "lectures"}.intersection(Path(path).parts[:-1])]
+    return {path for path in tracked
+            if len(Path(path).parts) > 2 and Path(path).parts[1] in RECEIVED_DIRS}
+
+
+def _received_notes(paths: set[str]) -> tuple[str, ...]:
+    return tuple(f"received material tracked by explicit opt-in: {path}" for path in sorted(paths))
+
+
+def _upstream_missing(root: Path) -> bool:
+    branch = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD", required=False).stdout.strip()
+    if not branch:
+        return False
+    remote = _git(root, "ls-remote", "--heads", "origin", f"refs/heads/{branch}", required=False)
+    return remote.returncode == 0 and not remote.stdout.strip()
+
+
+def _count(root: Path, *revs: str) -> int:
+    result = _git(root, "rev-list", "--count", *revs, required=False)
+    return int(result.stdout.strip()) if result.returncode == 0 else 0
 
 
 def _ensure_ignores(root: Path) -> None:
@@ -348,7 +368,6 @@ def check(root: Path) -> list[str]:
     problems: list[str] = []
     try:
         require_clone(root)
-        problems.extend(_privacy_problems(root))
         conflicts = _conflicts(root)
         problems.extend(f"conflict: {path}" for path in conflicts)
         if _in_rebase(root):
@@ -397,9 +416,6 @@ def git_sync(root: Path, hostname: str | None = None, now: datetime | None = Non
     if conflicts or _in_rebase(root):
         return SyncResult("Modules   conflict; resolve files and continue/abort the rebase before syncing",
                           conflicts=conflicts or ("rebase in progress",))
-    privacy = _privacy_problems(root)
-    if privacy:
-        raise PpsError("\n".join(privacy))
     warnings: list[str] = []
     before = _git(root, "rev-parse", "--verify", "HEAD", required=False).stdout.strip()
     try:
@@ -411,44 +427,47 @@ def git_sync(root: Path, hostname: str | None = None, now: datetime | None = Non
     if conflicts or _in_rebase(root):
         return SyncResult("Modules   conflict; resolve files, then continue the rebase (or stage autostash resolutions)",
                           conflicts=conflicts or ("rebase in progress",))
-    if pull_error:
+    first_push = bool(pull_error) and _upstream_missing(root)
+    pulled = 0
+    if pull_error and not first_push:
         warnings.append(f"pull failed (offline, using local copy): {pull_error}")
-    # A remote can introduce unsafe tracked files too. Never push them onward.
-    privacy = _privacy_problems(root)
-    if privacy:
-        raise PpsError("\n".join(privacy))
+    elif not pull_error:
+        pulled = _count(root, f"{before}..@{{upstream}}" if before else "@{upstream}")
     _ensure_ignores(root)
     write_table(root, load_modules(root))
     problems = check(root)
     if problems:
         raise PpsError("\n".join(problems))
-    after = _git(root, "rev-parse", "--verify", "HEAD", required=False).stdout.strip()
-    pulled = 0
-    if before and after and before != after:
-        pulled = int(_git(root, "rev-list", "--count", f"{before}..{after}").stdout.strip())
+    opted_in = _received_tracked(root)
     if _git(root, "status", "--porcelain").stdout:
         _git(root, "add", "-A")
-        # Nested ignore overrides can defeat root rules. Recheck the staged index
-        # before making a commit, not just the files tracked before staging.
-        privacy = _privacy_problems(root)
-        if privacy:
-            raise PpsError("\n".join(privacy))
-        stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
-        _git(root, "commit", "-m", f"study: {stamp} {hostname or socket.gethostname()}")
-    counts = _git(root, "rev-list", "--count", "@{upstream}..HEAD", required=False)
-    pushed = int(counts.stdout.strip()) if counts.returncode == 0 else 0
-    try:
-        push = _git(root, "push", "--quiet", required=False)
-        push_error = push.stderr.strip() if push.returncode else ""
-    except PpsError as exc:
-        push_error = str(exc)
+        # Nested ignore overrides can defeat root rules. Only an explicit
+        # `git add -f` may track received material, never the default staging.
+        unintended = sorted(_received_tracked(root) - opted_in)
+        if unintended:
+            _git(root, "reset", "-q", "--", *unintended)
+            raise PpsError("received material was staged by default and has been unstaged; "
+                           "fix the ignore override or opt in with git add -f:\n" + "\n".join(unintended))
+        if _git(root, "diff", "--cached", "--quiet", required=False).returncode:
+            stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+            _git(root, "commit", "-m", f"study: {stamp} {hostname or socket.gethostname()}")
+    has_head = _git(root, "rev-parse", "--verify", "HEAD", required=False).returncode == 0
+    pushed = _count(root, "HEAD") if first_push else _count(root, "@{upstream}..HEAD")
+    push_args = ("push", "--quiet", "-u", "origin", "HEAD") if first_push else ("push", "--quiet")
+    push_error = ""
+    if has_head:
+        try:
+            push = _git(root, *push_args, required=False)
+            push_error = push.stderr.strip() if push.returncode else ""
+        except PpsError as exc:
+            push_error = str(exc)
     if push_error:
         warnings.append(f"push failed; commits kept locally for next sync: {push_error}")
         pushed = 0
     summary = f"pulled {pulled}, pushed {pushed}" if pulled or pushed else "up to date"
     if warnings:
         summary = "local copy ready; sync incomplete"
-    return SyncResult(f"Modules   {summary}", tuple(warnings))
+    return SyncResult(f"Modules   {summary}", tuple(warnings), notes=_received_notes(_received_tracked(root)))
 
 
 def list_records(modules: list[Module]) -> list[dict]:
@@ -475,6 +494,8 @@ def format_doctor(root: Path, source: str) -> str:
         lines.extend((f"  ahead        {ahead}", f"  behind       {behind} (last fetch)"))
         modules, _ = _scan(root)
         lines.append(f"  count        {len(modules)}")
+        for note in _received_notes(_received_tracked(root)):
+            lines.append(f"  note         {note}")
     except (PpsError, OSError, UnicodeError) as exc:
         lines.append(f"  clone        {exc}")
     problems = check(root)

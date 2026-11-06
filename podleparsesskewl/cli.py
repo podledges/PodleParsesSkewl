@@ -340,6 +340,8 @@ def _cmd_modules(args: argparse.Namespace) -> int:
         print(result.summary)
         for warning in result.warnings:
             print(f"warning: {warning}", file=sys.stderr)
+        for note in result.notes:
+            print(f"note: {note}", file=sys.stderr)
         for path in result.conflicts:
             print(f"conflict: {path}", file=sys.stderr)
         return result.exit_code

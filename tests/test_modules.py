@@ -286,7 +286,7 @@ class GitModulesTests(unittest.TestCase):
         git(self.a, "remote", "set-url", "origin", str(self.remote))
         self.assertIn("pushed 1", m.git_sync(self.a).summary)
 
-    def test_material_ignored_work_synced_and_forced_material_rejected(self):
+    def test_material_ignored_work_synced_and_forced_material_opt_in(self):
         material = self.module.folder / "material" / "textbook.pdf"
         material.write_text("synthetic placeholder, not real course material")
         lectures = self.module.folder / "lectures"
@@ -300,18 +300,61 @@ class GitModulesTests(unittest.TestCase):
         self.assertNotIn("lecture.json", tracked)
         self.assertIn("assignment.md", tracked)
         git(self.a, "add", "-f", str(material))
-        with self.assertRaisesRegex(PpsError, "must not be tracked"):
-            m.git_sync(self.a)
+        result = m.git_sync(self.a)
+        self.assertEqual((result.exit_code, result.warnings), (0, ()))
+        relative = str(material.relative_to(self.a))
+        self.assertTrue(any(relative in note for note in result.notes))
+        self.assertIn(relative, git(self.remote, "ls-tree", "-r", "--name-only", "main"))
+        self.assertEqual(m.check(self.a), [])
+        self.assertIn(relative, m.format_doctor(self.a, "flag"))
+        self.assertEqual(m.git_sync(self.b).exit_code, 0)
+        self.assertTrue((self.b / relative).is_file())
+        self.assertEqual(m.check(self.b), [])
+
+    def test_nested_work_lectures_folder_is_own_work(self):
+        notes = self.module.folder / "work" / "lectures" / "notes.md"
+        notes.parent.mkdir()
+        notes.write_text("my own lecture notes")
+        result = m.git_sync(self.a)
+        self.assertEqual((result.exit_code, result.warnings, result.notes), (0, (), ()))
+        self.assertIn(str(notes.relative_to(self.a)), git(self.remote, "ls-tree", "-r", "--name-only", "main"))
+        self.assertEqual(git(self.a, "status", "--porcelain"), "")
 
     def test_nested_ignore_override_cannot_upload_received_material(self):
         # A nested .gitignore could re-include material despite the root ignore.
         (self.module.folder / ".gitignore").write_text("!material/\n!material/**\n")
         (self.module.folder / "material" / "received.txt").write_text("synthetic fixture")
         before = git(self.a, "rev-parse", "HEAD")
-        with self.assertRaisesRegex(PpsError, "must not be tracked"):
+        with self.assertRaisesRegex(PpsError, "staged by default"):
             m.git_sync(self.a)
         self.assertEqual(git(self.a, "rev-parse", "HEAD"), before)
         self.assertEqual(git(self.remote, "rev-parse", "main"), before)
+        self.assertNotIn("received.txt", git(self.a, "ls-files"))
+        (self.module.folder / ".gitignore").unlink()
+        self.assertEqual(m.git_sync(self.a).summary, "Modules   up to date")
+        self.assertEqual(git(self.a, "status", "--porcelain"), "")
+        self.assertNotIn("received.txt", git(self.remote, "ls-tree", "-r", "--name-only", "main"))
+
+    def test_first_sync_to_empty_remote_publishes_without_warnings(self):
+        remote = self.base / "empty.git"
+        git(self.base, "init", "--bare", "--initial-branch=main", str(remote))
+        clone = self.base / "C" / "modules"
+        m.git_init(clone, str(remote))
+        result = m.git_sync(clone)
+        self.assertEqual(result.warnings, ())
+        self.assertEqual(result.summary, "Modules   pulled 0, pushed 1")
+        self.assertEqual(git(remote, "rev-parse", "main"), git(clone, "rev-parse", "HEAD"))
+        self.assertEqual(m.git_sync(clone).summary, "Modules   up to date")
+
+    def test_pulled_count_excludes_rebased_local_commits(self):
+        git(self.a, "remote", "set-url", "origin", str(self.base / "absent.git"))
+        (self.a / self.tree_relative).write_text("offline edit\n")
+        m.git_sync(self.a)
+        git(self.a, "remote", "set-url", "origin", str(self.remote))
+        for text in ("B one\n", "B two\n"):
+            (self.b / "_project" / "notes.md").write_text(text)
+            self.assertIn("pushed 1", m.git_sync(self.b).summary)
+        self.assertEqual(m.git_sync(self.a).summary, "Modules   pulled 2, pushed 1")
 
     def test_cli_list_show_resolve_exit_paths_and_mutations(self):
         code, text, _ = self.cli("list", "--json")
@@ -367,7 +410,6 @@ class ConfigAndPrivacyTests(unittest.TestCase):
     def test_public_privacy_guard(self):
         root = Path(__file__).resolve().parents[1]
         self.assertEqual(git(root, "ls-files", "--", "modules"), "")
-        self.assertIn("modules/", (root / ".gitignore").read_text().splitlines())
         self.assertEqual(git(root, "check-ignore", "--no-index", "modules/private-example/module.json"),
                          "modules/private-example/module.json")
 
