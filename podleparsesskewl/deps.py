@@ -46,7 +46,10 @@ def inspect_environment() -> Environment:
 
 def format_doctor(env: Environment) -> str:
     lines = ["PodleParsesSkewl doctor", ""]
-    for tool in (env.ffmpeg, env.ffprobe, env.transcriber):
+    git_path = shutil.which("git")
+    git = ToolStatus("git", git_path is not None, Path(git_path) if git_path else None,
+                     "required for private study module sync")
+    for tool in (env.ffmpeg, env.ffprobe, git, env.transcriber):
         mark = "ok" if tool.found else "missing"
         location = str(tool.path) if tool.path is not None else "-"
         lines.append(f"  {tool.name:<12} {mark:<8} {location}")

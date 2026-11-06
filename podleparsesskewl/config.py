@@ -15,6 +15,7 @@ DEFAULT_LECTURES_DIR = r"C:\Users\ayden\Videos\Lectures"
 ENV_LECTURES_DIR = "PODLEPARSESSKEWL_LECTURES_DIR"
 ENV_OUTPUT_DIR = "PODLEPARSESSKEWL_OUTPUT_DIR"
 ENV_ARCHIVE_DIR = "PODLEPARSESSKEWL_ARCHIVE_DIR"
+ENV_MODULES_DIR = "PODLEPARSESSKEWL_MODULES_DIR"
 CONFIG_NAME = "podleparsesskewl.toml"
 _WINDOWS_DRIVE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
 
@@ -28,6 +29,8 @@ class AppConfig:
     archive_dir: Path | None = None
     archive_dir_source: str = "unset"
     archive_after_notes: bool = True
+    modules_dir: Path = Path("modules")
+    modules_dir_source: str = "default"
 
 
 def load_config(
@@ -35,6 +38,7 @@ def load_config(
     lectures_dir: Path | None = None,
     output_dir: Path | None = None,
     archive_dir: Path | None = None,
+    modules_dir: Path | None = None,
     config_path: Path | None = None,
 ) -> AppConfig:
     """Resolve lecture, default-output, and archive directories.
@@ -75,6 +79,15 @@ def load_config(
         file_source=file_source,
         use_env=use_env,
     )
+    modules_value, modules_source = _resolve_required_path(
+        flag=modules_dir,
+        env_name=ENV_MODULES_DIR,
+        file_value=_toml_string(file_payload, "modules_dir"),
+        file_source=file_source,
+        default="modules",
+        use_env=use_env,
+    )
+    modules_path, modules_label = _maybe_translate(modules_value, modules_source)
     archive_after = _toml_bool(file_payload, "archive_after_notes", True)
     lectures_path, lectures_label = _maybe_translate(lectures_value, lectures_source)
     output_path, output_label = (
@@ -91,6 +104,8 @@ def load_config(
         archive_dir=archive_path,
         archive_dir_source=archive_label,
         archive_after_notes=archive_after,
+        modules_dir=modules_path,
+        modules_dir_source=modules_label,
     )
 
 

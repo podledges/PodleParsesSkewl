@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from podleparsesskewl import __version__
+from podleparsesskewl import __version__, modules
 from podleparsesskewl.config import (
     DEFAULT_LECTURES_DIR,
     AppConfig,
@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "modules":
+            return _cmd_modules(args)
         if args.command == "doctor":
             return _cmd_doctor(args)
         if args.command == "list":
@@ -81,6 +83,32 @@ def _build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check ffmpeg, transcription engines, and lecture directory")
     _add_config_flags(doctor)
+    doctor.add_argument("--modules-dir", type=Path)
+
+    registry = sub.add_parser("modules", help="manage the private study modules clone")
+    registry.add_argument("--modules-dir", type=Path)
+    registry.add_argument("--config", type=Path)
+    commands = registry.add_subparsers(dest="modules_command", required=True)
+    for name in ("init", "sync", "list", "resolve", "show", "add", "alias", "check"):
+        command = commands.add_parser(name)
+        # Accept configuration before or after the subcommand without clobbering it.
+        command.add_argument("--modules-dir", type=Path, default=argparse.SUPPRESS)
+        command.add_argument("--config", type=Path, default=argparse.SUPPRESS)
+        if name == "init":
+            command.add_argument("url")
+        if name in ("resolve", "show"):
+            command.add_argument("mention", nargs="+")
+        if name in ("resolve", "list"):
+            command.add_argument("--json", action="store_true")
+        if name in ("add", "alias"):
+            command.add_argument("code")
+        if name == "add":
+            command.add_argument("--title", required=True)
+            command.add_argument("--short", required=True)
+            command.add_argument("--alias", action="append", default=[])
+            command.add_argument("--status", choices=modules.STATUSES, default="active")
+        if name == "alias":
+            command.add_argument("alias")
 
     listing = sub.add_parser("list", help="list Recordings in the lecture directory")
     _add_config_flags(listing)
@@ -260,6 +288,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     env = inspect_environment()
     print(format_doctor(env))
     config = _config_from_args(args)
+    print(modules.format_doctor(config.modules_dir, config.modules_dir_source))
     accessible = lectures_dir_accessible(config.lectures_dir)
     print("Lecture directory")
     print(f"  path         {config.lectures_dir}")
@@ -287,6 +316,60 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             f"{DEFAULT_LECTURES_DIR} on the captain's Windows machine."
         )
     return 0 if env.can_parse_video else 1
+
+
+def _cmd_modules(args: argparse.Namespace) -> int:
+    config = _config_from_args(args)
+    root = config.modules_dir
+    command = args.modules_command
+    if command == "init":
+        modules.git_init(root, args.url)
+        print(modules.format_doctor(root, config.modules_dir_source))
+        return 0
+    if command == "check":
+        problems = modules.check(root)
+        print("\n".join(problems) if problems else "Modules   check ok")
+        return 1 if problems else 0
+    modules.require_clone(root)
+    if command == "add":
+        modules.add_module(root, args.code, args.title, args.short, tuple(args.alias), args.status)
+    if command == "alias":
+        modules.add_alias(root, args.code, args.alias)
+    if command in ("sync", "add", "alias"):
+        result = modules.git_sync(root)
+        print(result.summary)
+        for warning in result.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        for path in result.conflicts:
+            print(f"conflict: {path}", file=sys.stderr)
+        return result.exit_code
+    registry = modules.load_modules(root)
+    if command == "list":
+        records = modules.list_records(registry)
+        if args.json:
+            print(json.dumps(records, ensure_ascii=False))
+        else:
+            print("Code | Module | Folder | Status | Aliases | Tree (done/total)")
+            for record in records:
+                print(f"{record['code']} | {record['title']} | {record['folder']} | "
+                      f"{record['status']} | {record['alias_count']} | {record['done']}/{record['total']}")
+        return 0
+    result = modules.resolve(" ".join(args.mention), registry)
+    if command == "show" and result["status"] == "resolved":
+        folder = Path(result["module"]["folder"])
+        tree = folder / "knowledge-tree.md"
+        if tree.is_symlink():
+            raise PpsError(f"unsafe tree: {tree}")
+        text = tree.read_text(encoding="utf-8")
+        print(folder)
+        print(text, end="")
+    elif getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        candidates = ", ".join(candidate["code"] for candidate in result["candidates"])
+        chosen = result.get("module", {}).get("code", candidates or "no candidates")
+        print(f"{result['status']}: {chosen} ({result['matched_by']}, {result['score']:.2f})")
+    return 0 if result["status"] == "resolved" else 3
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -505,4 +588,5 @@ def _config_from_args(args: argparse.Namespace) -> AppConfig:
         output_dir=getattr(args, "default_output_dir", None),
         archive_dir=getattr(args, "archive_dir", None),
         config_path=getattr(args, "config", None),
+        modules_dir=getattr(args, "modules_dir", None),
     )

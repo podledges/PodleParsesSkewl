@@ -275,7 +275,7 @@ class AgentContractTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 self.assertEqual(main(["transcribe", str(recording)]), 0)
-            self.assertEqual(parse.call_args.args[1].output_dir, folder / "lecture.lecture")
+            self.assertEqual(parse.call_args.args[1].output_dir, recording.resolve().parent / "lecture.lecture")
             payload = json.loads(stdout.getvalue())
             self.assertEqual(code, 0)
             self.assertEqual(payload["artifacts"]["transcript"], str(artifacts["transcript"]))
