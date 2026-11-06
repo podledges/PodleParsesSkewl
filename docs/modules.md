@@ -105,7 +105,7 @@ The command is safe to run at any time. It is a no-op when the clone is clean an
 
 ### Conflicts
 
-A conflict happens only when the same line of the same file was edited on both PCs with no sync in between. The local edit is already a commit, so the rebase stops on it, `sync` prints the conflicted paths, and exits 1. Resolve the markers (the files are Markdown or small JSON), run `git -C modules rebase --continue`, then `pps modules sync` again. Nothing is lost. The local commit survives `git rebase --abort` if the edit should be redone instead.
+A conflict happens when the same lines of a file were changed on both PCs with no sync in between. That includes the generated `MODULES.md`: each PC commits its own regenerated table, so an `add` or `alias` on each PC can conflict there even when they touched different modules. The local edit is already a commit, so the rebase stops on it, `sync` prints the conflicted paths, and exits 1. Resolve the markers in hand-edited files (Markdown or small JSON). For `MODULES.md`, do not hand-merge: take either side (`git -C modules checkout --theirs MODULES.md`) and `git -C modules add MODULES.md`; the next sync regenerates it from the manifests. Then run `GIT_EDITOR=true git -C modules rebase --continue`, so no commit-message editor opens, and `pps modules sync` again. Nothing is lost. The local commit survives `git rebase --abort` if the edit should be redone instead.
 
 ## Folder names
 
@@ -262,8 +262,8 @@ A machine with no `modules/` directory gets a message from `pps modules show` th
 `pps modules resolve` decides in this order. The first step that decides wins. Steps after the bands are the `/module` skill, not the command.
 
 1. Normalize: lower case, replace punctuation with spaces, collapse whitespace, drop stop words (`the`, `a`, `an`, `module`, `mod`, `course`, `class`, `one`, `for`, `and`, `of`, `to`, `in`, `on`).
-2. Code. The pattern is `\b([a-z]{2,3})?(\d{4})([a-z])?\b`. With letters, the code must match ignoring case. Digits only match any code whose digit block equals them. One hit resolves (`matched_by` `code` or `number`). Two hits are `ambiguous`.
-3. Near-code. A four-digit block that matched nothing, and is within one digit of exactly one registered code, is `suggest` with `matched_by` `near-code`. `4714` against only `EE4704` is this case. When two registered codes are that close, the result is `ambiguous`. A near-code is never auto-resolved and never stored as an alias.
+2. Code. The pattern is `\b([a-z]{2,3})?(\d{4})([a-z])?\b`. With letters, the code must match ignoring case. Digits only match any code whose digit block equals them. One hit resolves (`matched_by` `code` or `number`). Two hits are `ambiguous` and keep `matched_by` `code` or `number`.
+3. Near-code. A four-digit block that matched nothing, and is within one digit of exactly one registered code, is `suggest` with `matched_by` `near-code`. `4714` against only `EE4704` is this case. When two registered codes are that close, the result is `ambiguous` and keeps `matched_by` `near-code`. A near-code is never auto-resolved and never stored as an alias.
 4. Alias. The normalized mention equals a normalized alias of exactly one module. Resolved, `matched_by` `alias`.
 5. Fuzzy. Score every module. `best >= 0.85` and `best - second >= 0.15` resolves (`matched_by` `fuzzy`). `best >= 0.60` with that same gap is `suggest` with that one candidate. `best >= 0.60` with a smaller gap is `ambiguous`, listing every candidate at or above 0.60. Otherwise the result is `unknown`, and the candidates are the top three. A tie is always `ambiguous` (or `unknown` below 0.60). Candidates are listed by score, with ties ordered `status: active` first, then the lower code; that order never resolves or suggests a winner.
 
