@@ -41,7 +41,7 @@ def load_config(
     modules_dir: Path | None = None,
     config_path: Path | None = None,
 ) -> AppConfig:
-    """Resolve lecture, default-output, and archive directories.
+    """Resolve lecture, default-output, archive, and study-module directories.
 
     Explicit beats ambient, per key: a flag, then an explicit `--config` file,
     then the environment, then a discovered config file, then the default.
