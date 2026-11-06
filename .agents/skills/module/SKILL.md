@@ -12,7 +12,7 @@ description: >
 
 # /module
 
-Work from the PodleParsesSkewl repository root. Modules are the folders in `modules/`, a clone of the private modules repo; the registry is `modules/*/module.json`; the format reference is `docs/modules.md`. Never commit anything under `modules/` to PodleParsesSkewl, and never put received course material anywhere but `material/`.
+Work from the PodleParsesSkewl repository root. Modules are the folders in `modules/`, a clone of the private modules repo; the registry is `modules/*/module.json`; the format reference is `docs/modules.md`. Never commit anything under `modules/` to PodleParsesSkewl, and never put received course material anywhere but `material/`, or `lectures/` for parsed `*.lecture` folders.
 
 ## Completion
 
@@ -20,12 +20,12 @@ Done when the mention is resolved to exactly one module (or a new one is created
 
 ## Steps
 
-0. Sync. On the first module action of the session run `python3 -m podleparsesskewl modules sync`. If it reports a conflict, resolve the markers in the named files, run `git -C modules rebase --continue`, and sync again before anything else. If it says `modules/` is missing, tell the user the one-time `pps modules init <url>` step from `docs/modules.md` and stop. Then read `modules/MODULES.md`.
+0. Sync. On the first module action of the session run `python3 -m podleparsesskewl modules sync`. Sync regenerates the table, commits local edits, pulls with rebase, then pushes. If it reports a rebase conflict (exit 1), resolve the markers in the named files, run `git -C modules rebase --continue`, and sync again before anything else. If it says `modules/` is missing, tell the user the one-time `pps modules init <url>` step from `docs/modules.md` and stop. Then read `modules/MODULES.md`.
 1. Resolve. If the mention is a code, bare number or alias in `MODULES.md`, use it. Otherwise run `python3 -m podleparsesskewl modules resolve "<mention>" --json`.
    - `resolved` by code, number or alias: proceed silently.
    - `resolved` by fuzzy: proceed, and say in one line which module you took it as.
    - `suggest`: ask "<CODE> <short>?" in one line. Yes: proceed and, unless `matched_by` is `near-code`, run `pps modules alias <CODE> "<mention>"`. No: go to step 2.
-   - `ambiguous`: list the candidates in one line and ask which. Persist the answer as an alias.
+   - `ambiguous`: list the candidates in one line and ask which. Persist the answer as an alias, unless the mention is a code, bare number or digit near-miss (`matched_by` `code`, `number` or `near-code`).
    - `unknown`: go to step 2.
 2. Semantic pass. Read the candidate list and the table. If one existing module clearly fits (a nickname, an abbreviation, a topic that belongs to it), propose it in one line and, on yes, persist the alias. If nothing fits, ask whether this is a new module and for its code and full title if missing.
 3. New module. Derive Short by the naming rule in `docs/modules.md` (abbreviation first, else first two content words), propose `<CODE> - <Short>`, and on yes run `pps modules add <CODE> --title "<title>" --short "<Short>"`. Then start its tree (step 5).

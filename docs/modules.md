@@ -91,18 +91,21 @@ There is no daily command to run by hand. `/module` runs `pps modules sync` at t
 
 `pps modules sync` does this, in order:
 
-1. Refuse, and point at `init`, when `modules/.git` is missing.
-2. `git -C modules pull --rebase --autostash --quiet`. A network failure is a warning (`offline, using local copy`), not an error.
-3. Regenerate `modules/MODULES.md` from the manifests.
-4. When `git status --porcelain` is non-empty: `git add -A` and commit as `study: <YYYY-MM-DDTHH:MMZ> <hostname>`. The tool does not set a git author; the machine's git config applies.
-5. `git -C modules push --quiet`. A push failure is a warning. The commit stays local and the next sync pushes it.
-6. Print one line: `Modules   up to date` or `Modules   pulled 2, pushed 1`.
+1. Refuse, and point at `init`, when `modules/.git` is missing. Refuse, and name the files, when a rebase or a merge conflict is already in progress.
+2. Regenerate `modules/MODULES.md` from the manifests.
+3. When `git status --porcelain` is non-empty: `git add -A` and commit as `study: <YYYY-MM-DDTHH:MMZ> <hostname>`. The tool does not set a git author; the machine's git config applies.
+4. `git -C modules pull --rebase --quiet`, with no autostash. A network failure is a warning (`offline, using local copy`), not an error.
+5. When that rebase conflicts, print the conflicted files and exit 1. See Conflicts.
+6. `git -C modules push --quiet`. A push failure is a warning. The commit stays local and the next sync pushes it.
+7. Print one line: `Modules   up to date` or `Modules   pulled 2, pushed 1`.
+
+Local edits are committed before the pull, so the working tree is clean when the rebase runs. A conflict is always a rebase conflict with a local commit to continue; no stash is involved, so no edit can be dropped.
 
 The command is safe to run at any time. It is a no-op when the clone is clean and already matches the remote. Do not `git push` by hand inside `modules/` when `sync` is available. `show` does not sync by itself.
 
 ### Conflicts
 
-A conflict happens only when the same line of the same file was edited on both PCs with no sync in between. Rebase stops, `sync` prints the conflicted paths, and exits 1. Resolve the markers (the files are Markdown or small JSON), run `git -C modules rebase --continue`, then `pps modules sync` again. Nothing is lost. The local commit survives `git rebase --abort` if the edit should be redone instead.
+A conflict happens only when the same line of the same file was edited on both PCs with no sync in between. The local edit is already a commit, so the rebase stops on it, `sync` prints the conflicted paths, and exits 1. Resolve the markers (the files are Markdown or small JSON), run `git -C modules rebase --continue`, then `pps modules sync` again. Nothing is lost. The local commit survives `git rebase --abort` if the edit should be redone instead.
 
 ## Folder names
 
@@ -142,7 +145,7 @@ Spaces in the folder name are intentional.
   "code": "EE4704",
   "title": "Image Processing and Analysis",
   "short": "Image Processing",
-  "aliases": ["img analysis", "image module", "dip"],
+  "aliases": ["img analysis", "image", "dip"],
   "status": "active",
   "added": "2026-11-07"
 }
@@ -165,7 +168,7 @@ One manifest per folder. The set of `module.json` files is the registry.
 | Code | Module | Folder | Status | Aliases |
 | --- | --- | --- | --- | --- |
 | CG2271 | Real-Time Operating Systems | `CG2271 - RTOS/` | paused | rtos, real time os, operating systems |
-| EE4704 | Image Processing and Analysis | `EE4704 - Image Processing/` | active | img analysis, image module, image processing, dip |
+| EE4704 | Image Processing and Analysis | `EE4704 - Image Processing/` | active | img analysis, image, image processing, dip |
 | EE5518 | VLSI Digital Circuit Design | `EE5518 - VLSI/` | paused | vlsi, chip design |
 ```
 
@@ -240,7 +243,7 @@ Override order, the same pattern as the lecture directory: `--modules-dir`, an e
 | Command | Does | Exit |
 | --- | --- | --- |
 | `pps modules init <url>` | Clone `<url>` into `modules/` when absent; verify the remote and the layout; print the doctor Modules block. No-op when `modules/` is already that clone. | 0. 2 when `modules/` exists and is not a clone of that remote. |
-| `pps modules sync` | Pull with rebase and autostash, regenerate `MODULES.md`, commit when dirty, push. One summary line. | 0. 1 on conflict (the line names the files). Offline and push failures are warnings. |
+| `pps modules sync` | Refuse when not a clone or mid-rebase, regenerate `MODULES.md`, commit when dirty, pull with rebase (no autostash), push. One summary line. | 0. 1 on conflict (the line names the files). Offline and push failures are warnings. |
 | `pps modules list [--json]` | Table of code, title, folder, status, alias count, and tree checkbox counts (done/total). | 0 |
 | `pps modules resolve <mention...> [--json]` | Resolve as below. JSON, or one human line without `--json`. | 0 resolved. 3 for suggest, ambiguous, or unknown. 2 on error. |
 | `pps modules show <mention...>` | Resolve, then print the folder path and `knowledge-tree.md`. | 0. 3 when unresolved. |
@@ -262,7 +265,7 @@ A machine with no `modules/` directory gets a message from `pps modules show` th
 2. Code. The pattern is `\b([a-z]{2,3})?(\d{4})([a-z])?\b`. With letters, the code must match ignoring case. Digits only match any code whose digit block equals them. One hit resolves (`matched_by` `code` or `number`). Two hits are `ambiguous`.
 3. Near-code. A four-digit block that matched nothing, and is within one digit of exactly one registered code, is `suggest` with `matched_by` `near-code`. `4714` against only `EE4704` is this case. When two registered codes are that close, the result is `ambiguous`. A near-code is never auto-resolved and never stored as an alias.
 4. Alias. The normalized mention equals a normalized alias of exactly one module. Resolved, `matched_by` `alias`.
-5. Fuzzy. Score every module. `best >= 0.85` and `best - second >= 0.15` resolves (`matched_by` `fuzzy`). `best >= 0.60` with that same gap is `suggest` with that one candidate. `best >= 0.60` with a smaller gap is `ambiguous`, listing every candidate at or above 0.60. Otherwise the result is `unknown`, and the candidates are the top three. A tie prefers `status: active`, then the lower code.
+5. Fuzzy. Score every module. `best >= 0.85` and `best - second >= 0.15` resolves (`matched_by` `fuzzy`). `best >= 0.60` with that same gap is `suggest` with that one candidate. `best >= 0.60` with a smaller gap is `ambiguous`, listing every candidate at or above 0.60. Otherwise the result is `unknown`, and the candidates are the top three. A tie is always `ambiguous` (or `unknown` below 0.60). Candidates are listed by score, with ties ordered `status: active` first, then the lower code; that order never resolves or suggests a winner.
 
 Thresholds are `RESOLVE_SCORE = 0.85`, `SUGGEST_SCORE = 0.60`, and `MIN_GAP = 0.15`.
 
@@ -283,7 +286,7 @@ JSON shape:
 
 A code, bare number, or alias that is already visible in `MODULES.md` may be resolved in place, without the command. Anything else calls `pps modules resolve`.
 
-On `suggest`, `ambiguous`, or `unknown`, ask one short question. Examples: "Taking 'chip design' as EE5518 VLSI, ok?" and "'signal processing' is not a module I know. New module? Give me the code." On a yes for an existing module, run `pps modules alias <CODE> "<mention>"`. On a correction, persist the alias on the module the correction named. On a new module, propose `<CODE> - <Short>` with the naming rule above and, on a yes, run `pps modules add`.
+On `suggest`, `ambiguous`, or `unknown`, ask one short question. Examples: "Taking 'chip design' as EE5518 VLSI, ok?" and "'signal processing' is not a module I know. New module? Give me the code." On a yes for an existing module, run `pps modules alias <CODE> "<mention>"`, unless the mention is a code, bare number, or digit near-miss such as `4714`; those are never stored as aliases, including when they came back `ambiguous`. On a correction, persist the alias on the module the correction named. On a new module, propose `<CODE> - <Short>` with the naming rule above and, on a yes, run `pps modules add`.
 
 Say which module was taken, in one short line, when `matched_by` is `fuzzy` or the mention was resolved by that question. Stay silent on a code, number, or alias hit.
 
