@@ -6,7 +6,7 @@
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["./pi/extensions/transcribe.ts"],
-    "skills": ["./.agents/skills/transcribe"]
+    "skills": ["./.agents/skills/transcribe", "./.agents/skills/module"]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

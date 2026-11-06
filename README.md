@@ -270,6 +270,23 @@ You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those
 
 Canonical skill files live under `.agents/skills/<skill>/SKILL.md`. `.claude/skills/` and `.grok/skills/` hold discovery pointers only.
 
+## Study modules
+
+A Module is one taught course. Its files live in `modules/`, a clone of the private repo [podledges/PodleModules](https://github.com/podledges/PodleModules), ignored by this public repo. Each module is a folder `modules/<CODE> - <Short>/` (for example `EE4704 - Image Processing`, `CG2271 - RTOS`) holding that module's knowledge tree. The manual is [docs/modules.md](docs/modules.md). `/module` is the agent skill.
+
+Once per machine, from a checkout of this repo:
+
+```bash
+python3 -m podleparsesskewl modules init git@github.com:podledges/PodleModules.git
+python3 -m podleparsesskewl doctor
+```
+
+On the Windows PC, run those inside WSL from a checkout on the WSL filesystem (for example `~/PodleParsesSkewl`), not under `/mnt/c`. Day to day, an agent runs sync. To print a knowledge tree:
+
+```bash
+python3 -m podleparsesskewl modules show 4704
+```
+
 ## Tests
 
 CI is GitHub Actions: a remote machine that installs ffmpeg and runs `python -m unittest` on every push and pull request. That is the automated check. It is not the only real media test.
