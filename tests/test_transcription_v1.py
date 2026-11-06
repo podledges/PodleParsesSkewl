@@ -230,7 +230,7 @@ class AgentContractTests(unittest.TestCase):
 
     def test_machine_result_returns_paths_not_transcript_body(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            folder = Path(raw)
+            folder = Path(raw).resolve()
             recording = folder / "lecture.mp3"
             recording.write_bytes(b"audio")
             output = folder / "result"
