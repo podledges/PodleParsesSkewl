@@ -35,3 +35,11 @@ _Avoid_: report, export, output (those are views or folders)
 **Report**:
 A human-readable view of a Document. The program's plain HTML/Markdown is one Report. `/ezLectures` is the faithful said+shown view. `/present` is the teaching view (`lecture.present.html`).
 _Avoid_: Document (the Document is the source; a Report is a view). Do not use "notes" as a domain object name.
+
+**Module**:
+One taught course with a code and a title. Its folder lives under `modules/`.
+_Avoid_: course, class, subject when meaning the folder
+
+**Knowledge tree**:
+What to know for a Module and what to read first. One Markdown file per Module.
+_Avoid_: syllabus, plan when meaning the file
