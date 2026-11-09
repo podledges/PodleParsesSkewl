@@ -177,9 +177,16 @@ class SignalThresholds:
         }
 
     @classmethod
-    def from_json_dict(cls, payload: dict[str, Any]) -> SignalThresholds:
+    def from_json_dict(cls, payload: Any) -> SignalThresholds:
+        if not isinstance(payload, dict):
+            raise PpsError("signal thresholds must be a JSON object")
         known = {field: payload[field] for field in cls.__dataclass_fields__ if field in payload}
-        return cls(**known)
+        try:
+            thresholds = cls(**known)
+            thresholds.validate()
+        except (TypeError, ValueError) as exc:
+            raise PpsError(f"invalid signal thresholds: {exc}") from exc
+        return thresholds
 
 
 @dataclass(frozen=True)

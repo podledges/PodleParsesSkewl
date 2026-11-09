@@ -789,6 +789,29 @@ class HistogramCliTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(["histogram", str(path), "--check"]), 0)
 
+    def test_write_repairs_malformed_stored_thresholds(self) -> None:
+        document = _document([(0, 10, 1)], [(1, 8, "talk " * 8)])
+        for bad in (None, {"window_size": "8"}):
+            with self.subTest(thresholds=bad), tempfile.TemporaryDirectory() as raw:
+                folder = Path(raw)
+                path = write_document(document, folder)
+                write_signal_views(document, folder)
+                stored = json.loads((folder / SIGNAL_JSON).read_text(encoding="utf-8"))
+                stored["thresholds"] = bad
+                (folder / SIGNAL_JSON).write_text(json.dumps(stored) + "\n", encoding="utf-8")
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(["histogram", str(path), "--check"]), 2)
+                self.assertIn("thresholds", stderr.getvalue())
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(["histogram", str(path), "--write"]), 0)
+                self.assertIn("using default thresholds", stderr.getvalue())
+                repaired = json.loads((folder / SIGNAL_JSON).read_text(encoding="utf-8"))
+                self.assertEqual(repaired["thresholds"], SignalThresholds().to_json_dict())
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(["histogram", str(path), "--check"]), 0)
+
     def test_check_malformed_grades_and_usage_errors(self) -> None:
         document = _document([(0, 10, 1)], [(1, 8, "talk " * 8)])
         with tempfile.TemporaryDirectory() as raw:

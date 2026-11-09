@@ -588,12 +588,15 @@ def _cmd_histogram(args: argparse.Namespace) -> int:
 
     signal_path = folder / SIGNAL_JSON
     stored = None
+    base = SignalThresholds()
     if signal_path.is_file():
         try:
             stored = load_signal(signal_path)
+            base = SignalThresholds.from_json_dict(stored.get("thresholds", {}))
         except PpsError as exc:
             if args.check:
-                raise
+                raise PpsError(f"{signal_path}: {exc}") from exc
+            stored = None
             print(f"warning: {exc}; using default thresholds", file=sys.stderr)
     if args.check and stored is None:
         computed = compute_signal(document, stills_text, SignalThresholds())
@@ -601,11 +604,6 @@ def _cmd_histogram(args: argparse.Namespace) -> int:
         print("no lecture.signal.json beside the Document; run pps histogram --write")
         _print_grade_status(folder, document, grades=None, errors=[], warnings=[])
         return 1
-    base = (
-        SignalThresholds.from_json_dict(stored.get("thresholds", {}))
-        if stored is not None
-        else SignalThresholds()
-    )
     thresholds = _histogram_thresholds(args, base)
 
     computed = compute_signal(document, stills_text, thresholds)
