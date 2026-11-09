@@ -38,6 +38,7 @@ class Still:
     start_seconds: float
     end_seconds: float
     image: str
+    appearance: int | None = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,9 @@ class LectureDocument:
                         item["end_seconds"], f"stills[{position}].end_seconds"
                     ),
                     image=_as_text(item["image"], f"stills[{position}].image"),
+                    appearance=_as_optional_appearance(
+                        item.get("appearance"), f"stills[{position}].appearance"
+                    ),
                 )
                 for position, item in enumerate(
                     _as_objects(payload["stills"], "stills")
@@ -231,6 +235,19 @@ def _as_count(value: Any, field: str) -> int:
 
 def _as_optional_count(value: Any, field: str) -> int | None:
     return None if value is None else _as_count(value, field)
+
+
+def _as_optional_appearance(value: Any, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or isinstance(value, str) or not isinstance(value, (int, float)):
+        raise PpsError(
+            f"Lecture Document field {field} must be a whole number >= 1, got {_kind(value)}"
+        )
+    number = _as_count(value, field)
+    if number < 1:
+        raise PpsError(f"Lecture Document field {field} must be >= 1, got {value!r}")
+    return number
 
 
 def _as_object(value: Any, field: str) -> dict[str, Any]:

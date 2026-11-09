@@ -195,3 +195,57 @@ def segment_stills(
             representative_seconds=last.representative_seconds,
         )
     return intervals
+
+
+def group_appearances(
+    frames: list[FrameSignature],
+    intervals: list[StillInterval],
+    *,
+    change_ratio: float = DEFAULT_CHANGE_RATIO,
+    block: int = DEFAULT_BLOCK,
+    block_threshold: float = DEFAULT_BLOCK_THRESHOLD,
+) -> list[int]:
+    """Assign each Still interval an appearance group id (1-based).
+
+    Two intervals share an id when the block change ratio against the first
+    interval of that group is below `change_ratio` - the same threshold
+    `segment_stills` uses for "a different look".
+    """
+    if not frames or not intervals:
+        return []
+    signatures: list[bytes] = []
+    sizes: list[tuple[int, int]] = []
+    for interval in intervals:
+        nearest = min(
+            frames,
+            key=lambda frame: (
+                abs(frame.time_seconds - interval.representative_seconds),
+                frame.time_seconds,
+            ),
+        )
+        signatures.append(nearest.samples)
+        sizes.append((nearest.width, nearest.height))
+    groups: list[tuple[int, bytes]] = []
+    ids: list[int] = []
+    next_id = 1
+    for signature, (width, height) in zip(signatures, sizes):
+        joined = None
+        for group_id, representative in groups:
+            ratio = block_change_ratio(
+                representative,
+                signature,
+                width,
+                height,
+                block=block,
+                block_threshold=block_threshold,
+            )
+            if ratio < change_ratio:
+                joined = group_id
+                break
+        if joined is None:
+            groups.append((next_id, signature))
+            ids.append(next_id)
+            next_id += 1
+        else:
+            ids.append(joined)
+    return ids

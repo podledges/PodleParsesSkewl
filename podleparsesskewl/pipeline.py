@@ -22,11 +22,19 @@ from podleparsesskewl.report import (
     write_plain_views,
     write_transcript_view,
 )
+from podleparsesskewl.signal import (
+    PASS_THROUGH_SECONDS,
+    WINDOW_SIZE,
+    WINDOW_STRIDE,
+    SignalThresholds,
+    write_signal_views,
+)
 from podleparsesskewl.stills import (
     DEFAULT_CHANGE_RATIO,
     DEFAULT_MIN_HOLD_SECONDS,
     DEFAULT_SAMPLE_FPS,
     FrameSignature,
+    group_appearances,
     segment_stills,
 )
 from podleparsesskewl.transcribe import TranscriptionOptions, load_transcript
@@ -46,6 +54,9 @@ class ParseOptions:
     visual_lookback_seconds: float | None = None
     pause_seconds: float = DEFAULT_PAUSE_SECONDS
     paragraph_words: int = DEFAULT_PARAGRAPH_WORDS
+    pass_through_seconds: float = PASS_THROUGH_SECONDS
+    window_size: int = WINDOW_SIZE
+    window_stride: int = WINDOW_STRIDE
     transcription: TranscriptionOptions = TranscriptionOptions()
 
 
@@ -55,6 +66,8 @@ class ParseResult:
     document_path: Path
     html_path: Path
     markdown_path: Path
+    signal_path: Path | None = None
+    signal_view_path: Path | None = None
 
     @property
     def transcript_path(self) -> Path:
@@ -139,9 +152,19 @@ def parse_recording(
                 environment,
                 fps=options.sample_fps,
             )
+        appearance_ids = (
+            group_appearances(
+                frames,
+                intervals,
+                change_ratio=options.change_ratio,
+            )
+            if frames and intervals
+            else []
+        )
         stills: list[Still] = []
         for index, interval in enumerate(intervals, start=1):
             image_rel = still_image_name(index)
+            appearance = appearance_ids[index - 1] if index <= len(appearance_ids) else None
             stills.append(
                 Still(
                     id=still_id(index),
@@ -149,6 +172,7 @@ def parse_recording(
                     start_seconds=interval.start_seconds,
                     end_seconds=interval.end_seconds,
                     image=image_rel.replace("\\", "/"),
+                    appearance=appearance,
                 )
             )
 
@@ -182,6 +206,17 @@ def parse_recording(
             pause_seconds=options.pause_seconds,
             max_words=options.paragraph_words,
         )
+        signal_path, signal_view_path = write_signal_views(
+            document,
+            output_dir,
+            stills_text=None,
+            thresholds=SignalThresholds(
+                pause_seconds=options.pause_seconds,
+                pass_through_seconds=options.pass_through_seconds,
+                window_size=options.window_size,
+                window_stride=options.window_stride,
+            ),
+        )
     finally:
         if not options.keep_work:
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -191,6 +226,8 @@ def parse_recording(
         document_path=document_path,
         html_path=html_path,
         markdown_path=markdown_path,
+        signal_path=signal_path,
+        signal_view_path=signal_view_path,
     )
 
 

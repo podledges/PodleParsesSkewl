@@ -13,7 +13,7 @@ Parse one local Recording, write `lecture.present.html`, then archive the input 
 
 ## Completion
 
-Done when `pps notes` has written the Lecture Document, plain views, and `lecture.present.html`, the `/present` teaching pass has been applied if the extractive file is still mechanical, and you have reported output paths plus whether the input was archived. On failure, the Recording stays at its original path unless the command itself printed a partial-archive error.
+Done when `pps notes` has written the Lecture Document, plain views, timing signal, and `lecture.present.html`, the `/present` teaching pass and Signal pass have been applied, and you have reported output paths plus whether the input was archived. The Signal pass leaves `lecture.stills-text.json`, `lecture.grades.json`, `lecture.brief.md`, and `lecture.taught.md` beside the Document. Brief and taught report are written into the Lecture folder before any archive move. On failure, the Recording stays at its original path unless the command itself printed a partial-archive error.
 
 ## Steps
 
@@ -27,7 +27,7 @@ Done when `pps notes` has written the Lecture Document, plain views, and `lectur
    python3 -m podleparsesskewl notes path/to/lecture.mp4 --no-archive --offline-transcription
    ```
 
-4. Open the resulting `lecture.json` and `lecture.present.html`. Follow `.agents/skills/present/SKILL.md` for the teaching pass: mental models, applications only when Said supplies them, local diagrams only where the Shown is not enough. Keep image `src` relative. Do not invent Said.
+4. Open the resulting `lecture.json` and `lecture.present.html`. Follow `.agents/skills/present/SKILL.md` for the teaching pass and the Signal pass: mental models, applications only when Said supplies them, local diagrams only where the Shown is not enough, then Still text, grades, `lecture.brief.md`, and `lecture.taught.md`. Keep image `src` relative. Do not invent Said. The four Signal-pass files are written into the Lecture folder, which is never moved; write them before treating archive as finished.
 5. Archive is part of `pps notes` (unique run folder, manifest, move not copy). Do not move files yourself. Use `--no-archive` when the captain wants the Recording left in place. Never overwrite an existing archive folder.
 
 If you are a manager agent, dispatch an implementation subagent with the resolved paths and the `pps notes` command, then a second pass that follows `/present`.

@@ -1,4 +1,4 @@
-"""Command-line surface for doctor, list, parse, present, notes, and render."""
+"""Command-line surface for doctor, list, parse, present, notes, histogram, and render."""
 
 from __future__ import annotations
 
@@ -25,6 +25,28 @@ from podleparsesskewl.pipeline import (
     default_output_dir,
     load_document,
     parse_recording,
+)
+from podleparsesskewl.signal import (
+    BRIEF_NAME,
+    GRADES_JSON,
+    PASS_THROUGH_SECONDS,
+    SIGNAL_JSON,
+    STILLS_TEXT_NAME,
+    TAUGHT_NAME,
+    WINDOW_SIZE,
+    WINDOW_STRIDE,
+    SignalThresholds,
+    compare_signal,
+    compute_signal,
+    load_grades,
+    load_signal,
+    load_stills_text,
+    missing_input_lines,
+    render_still_histogram,
+    render_window_histogram,
+    validate_grades,
+    warn_grades,
+    write_signal_views,
 )
 from podleparsesskewl.report import group_transcript, pairing_problems, write_plain_views
 from podleparsesskewl.stills import (
@@ -61,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_present(args)
         if args.command == "notes":
             return _cmd_notes(args)
+        if args.command == "histogram":
+            return _cmd_histogram(args)
         if args.command == "render":
             return _cmd_render(args)
         parser.print_help()
@@ -181,6 +205,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="leave the Recording in place after notes are written",
     )
 
+    histogram = sub.add_parser(
+        "histogram",
+        help="print or check the per-Still timing signal for a Lecture Document",
+    )
+    histogram.add_argument(
+        "document",
+        type=Path,
+        help="path to lecture.json or a folder that contains it",
+    )
+    histogram.add_argument(
+        "--check",
+        action="store_true",
+        help="compare a recomputation with lecture.signal.json and validate grades",
+    )
+    histogram.add_argument(
+        "--write",
+        action="store_true",
+        help="refresh lecture.signal.json and lecture.signal.md beside the Document",
+    )
+    histogram.add_argument("--pause-seconds", type=float)
+    histogram.add_argument("--pass-through-seconds", type=float)
+    histogram.add_argument("--window-size", type=int)
+    histogram.add_argument("--window-stride", type=int)
+
     render = sub.add_parser("render", help="rebuild plain HTML/Markdown from lecture.json")
     render.add_argument("document", type=Path, help="path to lecture.json")
     render.add_argument(
@@ -281,6 +329,13 @@ def _add_parse_option_flags(parser: argparse.ArgumentParser, *, explicit: bool =
     )
     parser.add_argument("--pause-seconds", type=float, default=1.5)
     parser.add_argument("--paragraph-words", type=int, default=120)
+    parser.add_argument(
+        "--pass-through-seconds",
+        type=float,
+        default=PASS_THROUGH_SECONDS,
+    )
+    parser.add_argument("--window-size", type=int, default=WINDOW_SIZE)
+    parser.add_argument("--window-stride", type=int, default=WINDOW_STRIDE)
     parser.set_defaults(visual_lookback_seconds=None)
 
 
@@ -506,6 +561,112 @@ def _cmd_notes(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_histogram(args: argparse.Namespace) -> int:
+    from podleparsesskewl.workflow import resolve_document_path
+
+    source = resolve_document_path(args.document)
+    document = load_document(source)
+    folder = source.parent
+    threshold_flags = any(
+        getattr(args, name) is not None
+        for name in ("pause_seconds", "pass_through_seconds", "window_size", "window_stride")
+    )
+    if args.check and args.write:
+        raise PpsError("--check and --write cannot be used together")
+    if args.check and threshold_flags:
+        raise PpsError("thresholds come from the stored signal")
+
+    stills_text = None
+    sidecar = folder / STILLS_TEXT_NAME
+    if sidecar.is_file():
+        stills_text = load_stills_text(sidecar, {still.id for still in document.stills})
+
+    stored = None
+    if args.check:
+        signal_path = folder / SIGNAL_JSON
+        if not signal_path.is_file():
+            thresholds = _histogram_thresholds(args)
+            computed = compute_signal(document, stills_text, thresholds)
+            _print_histogram_views(computed, grades=None)
+            print("no lecture.signal.json beside the Document; run pps histogram --write")
+            _print_grade_status(folder, document, grades=None, errors=[], warnings=[])
+            return 1
+        stored = load_signal(signal_path)
+        thresholds = SignalThresholds.from_json_dict(stored.get("thresholds", {}))
+    else:
+        thresholds = _histogram_thresholds(args)
+
+    computed = compute_signal(document, stills_text, thresholds)
+    grades_payload = None
+    grade_errors: list[str] = []
+    grade_warnings: list[str] = []
+    grades_path = folder / GRADES_JSON
+    if grades_path.is_file():
+        try:
+            grades_payload = load_grades(grades_path)
+        except PpsError as exc:
+            grade_errors = [str(exc)]
+            grades_payload = None
+        else:
+            public = computed.to_json_dict()
+            grade_errors = validate_grades(document, public, grades_payload)
+            grade_warnings = warn_grades(document, public, grades_payload)
+    valid_grades = grades_payload is not None and not grade_errors
+    _print_histogram_views(computed, grades=grades_payload if valid_grades else None)
+
+    if args.write:
+        json_path, md_path = write_signal_views(
+            document, folder, stills_text=stills_text, thresholds=thresholds
+        )
+        print(f"Signal    {json_path}")
+        print(f"Histogram {md_path}")
+        return 0
+
+    if args.check:
+        diffs = compare_signal(stored or {}, computed.to_json_dict())
+        for line in diffs:
+            print(line)
+        for problem in grade_errors:
+            print(f"grades: {problem}")
+        for warning in grade_warnings:
+            print(f"warning: grades: {warning}")
+        _print_grade_status(folder, document, grades_payload, grade_errors, grade_warnings)
+        return 1 if diffs or grade_errors else 0
+    return 0
+
+
+def _histogram_thresholds(args: argparse.Namespace) -> SignalThresholds:
+    kwargs: dict[str, float | int] = {}
+    if args.pause_seconds is not None:
+        kwargs["pause_seconds"] = args.pause_seconds
+    if args.pass_through_seconds is not None:
+        kwargs["pass_through_seconds"] = args.pass_through_seconds
+    if args.window_size is not None:
+        kwargs["window_size"] = args.window_size
+    if args.window_stride is not None:
+        kwargs["window_stride"] = args.window_stride
+    return SignalThresholds(**kwargs)
+
+
+def _print_histogram_views(computed, grades=None) -> None:
+    for line in missing_input_lines(computed):
+        print(line)
+    print(render_still_histogram(computed))
+    print()
+    print(render_window_histogram(computed, grades))
+
+
+def _print_grade_status(folder, document, grades, errors, warnings) -> None:
+    grades_path = folder / GRADES_JSON
+    if grades is not None and not errors:
+        print(f"Grades    valid, {len(grades.get('grades', []))} of {len(document.stills)} Stills")
+    elif not grades_path.is_file():
+        print("Grades    none")
+    print(f"Brief     {'present' if (folder / BRIEF_NAME).is_file() else 'missing'}")
+    print(f"Taught    {'present' if (folder / TAUGHT_NAME).is_file() else 'missing'}")
+    _ = warnings
+
+
 def _cmd_render(args: argparse.Namespace) -> int:
     document = load_document(args.document)
     source_dir = args.document.parent
@@ -547,6 +708,9 @@ def _parse_options(args: argparse.Namespace, output: Path) -> ParseOptions:
         visual_lookback_seconds=args.visual_lookback_seconds,
         pause_seconds=args.pause_seconds,
         paragraph_words=args.paragraph_words,
+        pass_through_seconds=args.pass_through_seconds,
+        window_size=args.window_size,
+        window_stride=args.window_stride,
         transcription=TranscriptionOptions(
             model=args.whisper_model,
             model_path=args.whisper_model_path,
@@ -563,6 +727,12 @@ def _print_parse(result) -> None:
     print(f"Markdown  {result.markdown_path}")
     transcript_path = getattr(result, "transcript_path", result.document_path.parent / "transcript.md")
     print(f"Transcript {transcript_path}")
+    signal_path = getattr(result, "signal_path", None)
+    signal_view_path = getattr(result, "signal_view_path", None)
+    if signal_path is not None:
+        print(f"Signal    {signal_path}")
+    if signal_view_path is not None:
+        print(f"Histogram {signal_view_path}")
     print(f"Stills    {len(result.document.stills)}")
     print(f"Cues      {len(result.document.transcript.cues)}")
 

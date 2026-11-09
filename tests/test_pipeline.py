@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -208,6 +209,70 @@ class WorkFolderTests(unittest.TestCase):
                 [path.name for path in output.glob("_work-*")], [], "run scratch was left behind"
             )
 
+    def test_parse_writes_signal_views_and_appearance_ids(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from podleparsesskewl.stills import (
+            DEFAULT_SAMPLE_HEIGHT,
+            DEFAULT_SAMPLE_WIDTH,
+            FrameSignature,
+        )
+
+        width = DEFAULT_SAMPLE_WIDTH
+        height = DEFAULT_SAMPLE_HEIGHT
+        first = bytes([0]) * (width * height)
+        second = bytes([255]) * (width * height)
+        frames = [
+            FrameSignature(float(index), width, height, first) for index in range(4)
+        ] + [
+            FrameSignature(float(index), width, height, second) for index in range(4, 8)
+        ]
+        env = Environment(
+            ffmpeg=ToolStatus("ffmpeg", True, Path("/usr/bin/ffmpeg"), "stub"),
+            ffprobe=ToolStatus("ffprobe", True, Path("/usr/bin/ffprobe"), "stub"),
+            transcriber=ToolStatus("transcriber", False, None, "none"),
+        )
+
+        def fake_still(_recording, timestamps, output, _work, _env, *, fps):
+            for index in range(1, len(timestamps) + 1):
+                dest = output / f"stills/still-{index:03d}.png"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b"\x89PNG")
+
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "lecture.mp4"
+            recording.write_bytes(b"stub")
+            (folder / "lecture.srt").write_text(
+                "1\n00:00:01,000 --> 00:00:02,000\nHello.\n", encoding="utf-8"
+            )
+            output = folder / "out"
+            with mock.patch(
+                "podleparsesskewl.pipeline.probe_recording",
+                return_value=SimpleNamespace(
+                    duration_seconds=8.0,
+                    width=640,
+                    height=480,
+                    has_audio=True,
+                    has_video=True,
+                ),
+            ):
+                with mock.patch(
+                    "podleparsesskewl.pipeline.sample_signatures", return_value=frames
+                ):
+                    with mock.patch(
+                        "podleparsesskewl.pipeline.extract_stills_png", side_effect=fake_still
+                    ):
+                        result = parse_recording(
+                            recording, ParseOptions(output_dir=output), env=env
+                        )
+            self.assertTrue(result.signal_path.is_file())
+            self.assertTrue(result.signal_view_path.is_file())
+            self.assertEqual([still.appearance for still in result.document.stills], [1, 2])
+            payload = json.loads(result.signal_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["inputs"]["appearance_recorded"])
+
 
 class FailedParseCleanupTests(unittest.TestCase):
     def test_a_failing_parse_does_not_leave_scratch_folders_behind(self) -> None:
@@ -343,6 +408,14 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("<hr>", rebuilt)
             self.assertEqual(result.document.source.transcript_source, "sidecar:srt:lecture.srt")
             self.assertEqual(list(output.glob("_work*")), [])
+            self.assertTrue((output / "lecture.signal.json").is_file())
+            self.assertTrue((output / "lecture.signal.md").is_file())
+            self.assertEqual(result.signal_path, output / "lecture.signal.json")
+            signal = json.loads((output / "lecture.signal.json").read_text(encoding="utf-8"))
+            self.assertTrue(signal["inputs"]["appearance_recorded"])
+            for row in signal["stills"]:
+                self.assertLessEqual(row["spoken_seconds"], row["elapsed_seconds"])
+            self.assertTrue(all(still.appearance is not None for still in result.document.stills))
 
     @unittest.skipUnless(_ffmpeg(), "ffmpeg required for representative-frame regression")
     def test_off_tick_transition_uses_a_frame_inside_the_new_interval(self) -> None:

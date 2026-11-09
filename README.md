@@ -15,6 +15,12 @@ lecture.lecture/
   lecture.md             # same pairing in Markdown
   transcript.md          # faithful timestamped paragraphs, including audio-only input
   lecture.present.html   # teaching notes (pps present / Parse + Notes)
+  lecture.signal.json    # per-Still timing signal (written by parse)
+  lecture.signal.md      # ASCII histograms of elapsed and spoken time
+  lecture.stills-text.json  # optional Still text, written by the /present Signal pass
+  lecture.grades.json    # 0-3 importance grades (Signal pass)
+  lecture.brief.md       # grade-driven study brief (Signal pass)
+  lecture.taught.md      # full-transcript knowledge report (Signal pass)
   stills/
     still-001.png
     still-002.png
@@ -138,6 +144,11 @@ python3 -m podleparsesskewl present ./out/lecture/lecture.json
 
 # parse, write lecture.present.html, then move the input into a unique archive folder
 python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive-dir ./archive
+
+# print the timing histograms for an existing Lecture
+python3 -m podleparsesskewl histogram ./out/lecture/lecture.json
+python3 -m podleparsesskewl histogram ./out/lecture --check
+python3 -m podleparsesskewl histogram ./out/lecture --write
 ```
 
 `transcribe` is the explicit-local-file long-job interface, including MP3 and audio-only tracks. It does not use lecture discovery or configuration files. Without `-o`, output is `<stem>.lecture` beside the input. `--jsonl-progress` emits checking/processing/validating/done phases, not percentages, before the final JSON result.
@@ -151,6 +162,20 @@ Audio-only media, including attached cover artwork, writes `lecture.json` with e
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
 End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is parse + present, then a move of the Recording into a unique archive folder. Use `--no-archive` to leave the input in place. The GUI Parse button is `parse`; Parse + Notes is `notes`.
+
+### Timing signal and grades
+
+Every `pps parse` (and therefore `pps notes`) writes `lecture.signal.json` and `lecture.signal.md` beside the Document. The JSON holds elapsed and spoken seconds per Still, silence, dead air, pass-through and boilerplate flags, revisit links when the Document recorded `appearance`, and sliding windows of 8 Stills every 4. The Markdown view is two ASCII histograms plus a per-Still table.
+
+`pps histogram` reprints those histograms from the Document. `--check` recomputes with the thresholds stored in `lecture.signal.json` and exits 1 if anything other than `generated_at` differs, then validates `lecture.grades.json` when that file is present. `--write` refreshes both signal files. A Lecture parsed before this version loads and renders; revisit fields stay empty until it is parsed again.
+
+Histogram legend (word markers in the Notes column):
+
+```
+Time per Still. Bar = elapsed seconds; '#' = spoken, '.' = silent; one character = 5 s. Notes: boilerplate, pass-through, revisited (also N), tangent?, emphasis xN, no text.
+```
+
+The `/present` skill's Signal pass writes Still text, grades 0-3, `lecture.brief.md`, and `lecture.taught.md`. The program never calls a model; `pps histogram --check` is the contract for the grades file. Contracts live in `docs/signal.md`.
 
 ### Pi package
 
