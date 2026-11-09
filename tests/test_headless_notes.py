@@ -17,8 +17,8 @@ from podleparsesskewl.cli import (
     notes_preflight,
     quote_command,
 )
-from podleparsesskewl.config import AppConfig, find_recordings, load_config
-from podleparsesskewl.deps import FFMPEG_SETUP, TRANSCRIBER_SETUP, lectures_dir_setup
+from podleparsesskewl.config import AppConfig, find_recordings, list_recordings, load_config
+from podleparsesskewl.deps import FFMPEG_SETUP, TRANSCRIBER_SETUP
 from podleparsesskewl.document import Cue, LectureDocument, Section, SourceInfo, Still, Transcript
 from podleparsesskewl.present import REVIEW_NAME, render_review
 from podleparsesskewl.report import render_faithful_html
@@ -43,6 +43,26 @@ def _document() -> LectureDocument:
             Section("still-002", "Look at <this>.", (1,)),
             Section("still-001", "um okay the bus grants the cpu.\nLine two stays.", (0,)),
         ),
+    )
+
+
+def _notes_run(recording: Path) -> SimpleNamespace:
+    output = recording.parent
+    return SimpleNamespace(
+        parse=SimpleNamespace(
+            document_path=output / "lecture.json",
+            html_path=output / "lecture.html",
+            markdown_path=output / "lecture.md",
+            transcript_path=output / "transcript.md",
+            document=_document(),
+        ),
+        present=SimpleNamespace(
+            present_path=output / "lecture.present.html",
+            pairing_problems=(),
+        ),
+        archive=None,
+        review_path=output / REVIEW_NAME,
+        recording=recording,
     )
 
 
@@ -165,13 +185,78 @@ class SelectionTests(unittest.TestCase):
 
 
 class NotesContractTests(unittest.TestCase):
-    def test_notes_rejects_the_file_picker(self) -> None:
+    def test_notes_pick_is_explicit_and_not_a_search_fallback(self) -> None:
         parser = _build_parser()
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            parser.parse_args(["notes", "--pick"])
-        picked = parser.parse_args(["parse", "--pick"])
+        picked = parser.parse_args(["notes", "--pick"])
         self.assertTrue(picked.pick)
-        self.assertFalse(hasattr(parser.parse_args(["notes", "file.mp4"]), "pick"))
+        self.assertFalse(parser.parse_args(["notes", "file.mp4"]).pick)
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            _study_tree(root)
+            broken = SimpleNamespace(
+                ffmpeg=SimpleNamespace(found=False),
+                ffprobe=SimpleNamespace(found=False),
+                can_transcribe_audio=False,
+                can_parse_video=False,
+            )
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.pick_recording") as pick:
+                with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=broken):
+                    with mock.patch("podleparsesskewl.cli.parse_and_present") as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main(["notes", "--find", "Week4", "--in", str(root)])
+            self.assertEqual(code, 2)
+            pick.assert_not_called()
+            run.assert_not_called()
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["error"], "selection")
+            self.assertEqual(len(payload["matches"]), 3)
+            self.assertNotIn("preflight", stderr.getvalue())
+
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.pick_recording") as pick:
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = main(["notes", "--pick", "--find", "Week5", "--in", str(root)])
+            self.assertEqual(code, 2)
+            pick.assert_not_called()
+            self.assertEqual(json.loads(stdout.getvalue())["error"], "failed")
+
+    def test_notes_pick_uses_the_same_combined_page(self) -> None:
+        document = _document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "Week5-System.mp4"
+            recording.write_bytes(b"mp4")
+            output = folder / "out"
+            review = output / REVIEW_NAME
+            result = SimpleNamespace(
+                parse=SimpleNamespace(
+                    document_path=output / "lecture.json",
+                    html_path=output / "lecture.html",
+                    markdown_path=output / "lecture.md",
+                    transcript_path=output / "transcript.md",
+                    document=document,
+                ),
+                present=SimpleNamespace(
+                    present_path=output / "lecture.present.html",
+                    pairing_problems=(),
+                ),
+                archive=None,
+                review_path=review,
+                recording=recording,
+            )
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.pick_recording", return_value=recording) as pick:
+                with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=_ready_env()):
+                    with mock.patch("podleparsesskewl.cli.parse_and_present", return_value=result) as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main(["notes", "--pick", "--no-archive"])
+        self.assertEqual(code, 0)
+        pick.assert_called_once()
+        self.assertEqual(run.call_args.args[0], recording)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["open"], str(review.resolve()))
+        self.assertEqual(payload["artifacts"]["review"], str(review.resolve()))
 
     def test_preflight_stops_before_any_work_and_prints_the_retry(self) -> None:
         missing = SimpleNamespace(found=False)
@@ -203,14 +288,17 @@ class NotesContractTests(unittest.TestCase):
         err = stderr.getvalue()
         self.assertIn(FFMPEG_SETUP, err)
         self.assertIn(TRANSCRIBER_SETUP, err)
-        self.assertIn("absent-lectures", err)
+        self.assertIn("--whisper-model-path", err)
+        self.assertIn("LD_LIBRARY_PATH", err)
+        self.assertNotIn("The lecture directory is not accessible", err)
         self.assertIn("Retry:", err)
-        self.assertIn("NUS Y3S1", lectures_dir_setup(Path("absent-lectures")))
+        self.assertIn("absent-lectures", err)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["error"], "preflight")
-        self.assertEqual(payload["missing"], ["ffmpeg", "ffprobe", "transcriber", "lectures_dir"])
+        self.assertEqual(payload["missing"], ["ffmpeg", "ffprobe", "transcriber"])
         self.assertIn("notes", payload["retry"])
-        self.assertNotIn("{", err)
+        self.assertNotIn('"error"', err)
+        self.assertNotIn('"missing"', err)
 
     def test_zero_and_many_matches_fail_without_guessing(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -289,14 +377,85 @@ class NotesContractTests(unittest.TestCase):
 
     def test_notes_preflight_names_only_what_is_missing(self) -> None:
         ready = _ready_env()
-        config = AppConfig(lectures_dir=Path("."), lectures_dir_source="test")
-        self.assertEqual(notes_preflight(config, env=ready), ())
+        self.assertEqual(notes_preflight(env=ready), ())
         broken = SimpleNamespace(
             ffmpeg=SimpleNamespace(found=True),
             ffprobe=SimpleNamespace(found=False),
             can_transcribe_audio=True,
         )
-        self.assertEqual(notes_preflight(config, env=broken), ("ffprobe",))
+        self.assertEqual(notes_preflight(env=broken), ("ffprobe",))
+
+    def test_unreachable_lectures_dir_does_not_block_a_path_or_find(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            _study_tree(root)
+            absent = root / "absent-lectures"
+            recording = root / "5 - CG2027" / "recordings" / "Week5-System.mp4"
+            result = _notes_run(recording)
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=_ready_env()):
+                with mock.patch("podleparsesskewl.cli.parse_and_present", return_value=result) as run:
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        path_code = main([
+                            "notes", str(recording), "--lectures-dir", str(absent), "--no-archive",
+                        ])
+                        find_code = main([
+                            "notes", "--find", "Week5", "--in", str(root),
+                            "--lectures-dir", str(absent), "--no-archive",
+                        ])
+        self.assertEqual(path_code, 0)
+        self.assertEqual(find_code, 0)
+        self.assertEqual(run.call_args_list[0].args[0], recording)
+        self.assertEqual(run.call_args_list[1].args[0].name, "Week5-System.mp4")
+
+    def test_latest_still_refuses_an_inaccessible_lecture_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            absent = Path(raw) / "absent-lectures"
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=_ready_env()):
+                with mock.patch("podleparsesskewl.cli.parse_and_present") as run:
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        code = main(["notes", "--latest", "--lectures-dir", str(absent)])
+        self.assertEqual(code, 2)
+        run.assert_not_called()
+        self.assertIn("cannot use --latest", stderr.getvalue())
+        self.assertNotEqual(json.loads(stdout.getvalue())["error"], "preflight")
+
+    def test_list_and_latest_search_nested_recordings(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            _study_tree(root)
+            top = root / "top.mp4"
+            top.write_bytes(b"mp4")
+            newest = root / "5 - CG2027" / "recordings" / "Week5-System.mp4"
+            for path in root.rglob("*"):
+                if path.is_file():
+                    os.utime(path, (1_000, 1_000))
+            os.utime(newest, (2_000, 2_000))
+            listed = list_recordings(root)
+            self.assertEqual(listed[0], newest)
+            self.assertEqual(len(listed), 5)
+            self.assertIn(top, listed)
+            self.assertTrue(any(path.parent != root for path in listed))
+
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = main(["list", str(root)])
+            self.assertEqual(code, 0)
+            text = stdout.getvalue()
+            self.assertIn(str(newest), text)
+            self.assertIn(str(top), text)
+            self.assertNotIn("no Recordings found", text)
+            self.assertNotIn("Week5.txt", text)
+
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=_ready_env()):
+                with mock.patch(
+                    "podleparsesskewl.cli.parse_and_present",
+                    return_value=_notes_run(newest),
+                ) as run:
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        code = main(["notes", "--latest", "--lectures-dir", str(root), "--no-archive"])
+            self.assertEqual(code, 0)
+            self.assertEqual(run.call_args.args[0], newest)
 
     def test_explicit_path_and_latest_still_parse(self) -> None:
         parser = _build_parser()

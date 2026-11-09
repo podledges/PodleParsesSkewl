@@ -138,14 +138,25 @@ def lectures_dir_accessible(path: Path) -> bool:
 RECORDING_SUFFIXES = {".mp4", ".m4v", ".mov"}
 
 
+def _recording_files(directory: Path) -> list[Path]:
+    """Recording files under directory, including course subfolders.
+
+    Does not follow directory links. Callers choose sort order and matching.
+    """
+    found: list[Path] = []
+    for dirpath, _dirnames, filenames in os.walk(directory, followlinks=False):
+        for name in filenames:
+            path = Path(dirpath) / name
+            if path.suffix.lower() not in RECORDING_SUFFIXES or not path.is_file():
+                continue
+            found.append(path)
+    return found
+
+
 def list_recordings(directory: Path) -> list[Path]:
     if not lectures_dir_accessible(directory):
         return []
-    found = [
-        path
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix.lower() in RECORDING_SUFFIXES
-    ]
+    found = _recording_files(directory)
     return sorted(found, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
@@ -176,15 +187,11 @@ def find_recordings(directory: Path, pattern: str) -> list[Path]:
     if not lectures_dir_accessible(folder):
         raise PpsError(f"folder is not accessible: {folder}")
     needle = pattern.replace("\\", "/").casefold()
-    found: list[Path] = []
-    for dirpath, _dirnames, filenames in os.walk(folder, followlinks=False):
-        for name in filenames:
-            path = Path(dirpath) / name
-            if path.suffix.lower() not in RECORDING_SUFFIXES or not path.is_file():
-                continue
-            relative = path.relative_to(folder).as_posix().casefold()
-            if needle in relative:
-                found.append(path.resolve())
+    found = [
+        path.resolve()
+        for path in _recording_files(folder)
+        if needle in path.relative_to(folder).as_posix().casefold()
+    ]
     return sorted(found, key=lambda path: path.as_posix().casefold())
 
 

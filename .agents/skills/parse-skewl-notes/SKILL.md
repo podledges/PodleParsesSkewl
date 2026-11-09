@@ -13,12 +13,12 @@ Parse one local Recording headlessly. `pps notes` writes `lecture.review.html`, 
 
 ## Completion
 
-Done when `pps notes` has exited 0 and stdout is one JSON object whose `open` field is `lecture.review.html`. Report that path. The Recording stays where it was unless the JSON `archive` field is set. On failure, the Recording stays at its original path unless the command itself printed a partial-archive error. Do not open a file picker. Do not prompt.
+Done when `pps notes` has exited 0 and stdout is one JSON object whose `open` field is `lecture.review.html`. Report that path. The Recording stays where it was unless the JSON `archive` field is set. On failure, the Recording stays at its original path unless the command itself printed a partial-archive error. Pass `--pick` only when the person asked for a file picker. Do not prompt.
 
 ## Steps
 
-1. Work from the PodleParsesSkewl repository root. `pps notes` runs the doctor checks itself and stops before any work if ffmpeg, a transcription engine, or the lecture directory is missing. The stderr text is the setup and the exact command to retry.
-2. Resolve the Recording by a path, `--latest`, or `--find` with `--in`. `--find` searches the folder recursively. Exactly one match proceeds. Zero or many is a non-zero exit that lists the full paths; do not guess. Lecture files stay local. Do not upload them.
+1. Work from the PodleParsesSkewl repository root. Resolve the Recording first. A bad selection is reported even when ffmpeg or a transcription engine is missing. `pps notes` then stops before parse if either tool is missing. The stderr text is the setup and the exact command to retry. An explicit Recording path and `--find` with an explicit `--in` folder are not blocked because the configured lecture directory is unreachable. `--latest` still refuses an inaccessible lecture directory.
+2. Resolve the Recording by a path, `--latest`, `--find` with `--in`, or `--pick` when the person asked for a file picker. `list`, `--latest`, and `--find` search recursively, including course subfolders. Exactly one `--find` match proceeds. Zero or many is a non-zero exit that lists the full paths; report those paths and stop. Lecture files stay local. Do not upload them.
 3. Run the shared command. Quote paths that contain spaces:
 
    ```bash
@@ -27,7 +27,7 @@ Done when `pps notes` has exited 0 and stdout is one JSON object whose `open` fi
    python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive --archive-dir path/to/archive
    ```
 
-4. Open the path in the JSON `open` field. That page already carries both views. Follow `.agents/skills/present/SKILL.md` only to tighten the teaching half in place: mental models, applications only when Said supplies them, local diagrams only where the Shown is not enough. Keep image `src` relative. Do not invent Said. Do not rewrite the faithful half.
+4. Open the path in the JSON `open` field. That page already carries both views. Follow `.agents/skills/present/SKILL.md` only to tighten the teaching half of `lecture.review.html` in place. When the run was `pps notes`, edit that teaching half in place and do not retarget standalone `/present`, which still writes `lecture.present.html`. Mental models, applications only when Said supplies them, local diagrams only where the Shown is not enough. Keep image `src` relative. Do not invent Said. Do not rewrite the faithful half.
 5. Do not move files yourself. `--archive` moves the Recording into a unique run folder after the review page exists. `--no-archive` leaves it in place even when config would archive. Never overwrite an existing archive folder.
 
 If you are a manager agent, dispatch an implementation subagent with the resolved paths and the `pps notes` command, then a second pass that follows `/present` on the review page's teaching half.
@@ -35,6 +35,6 @@ If you are a manager agent, dispatch an implementation subagent with the resolve
 ## Boundaries
 
 - Same local-only rules as `/parse-skewl`: no cloud API, no bundled models, no committed lecture files.
-- The notes path is non-interactive. `--pick` is not a notes flag.
+- `--pick` is an explicit notes flag. Pass it only when the person asked for a file picker. A failed or ambiguous search lists paths and stops.
 - Move happens only after `lecture.review.html` exists, and only when archive was requested. If parse or present fails, leave the input where it is.
 - `pps present` and `pps render` still write one view alone. Do not use them instead of `notes` when the captain asked for the run.

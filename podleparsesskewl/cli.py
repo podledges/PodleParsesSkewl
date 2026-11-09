@@ -28,7 +28,6 @@ from podleparsesskewl.deps import (
     Environment,
     format_doctor,
     inspect_environment,
-    lectures_dir_setup,
 )
 from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.pipeline import (
@@ -123,13 +122,16 @@ def _build_parser() -> argparse.ArgumentParser:
         if name == "alias":
             command.add_argument("alias")
 
-    listing = sub.add_parser("list", help="list Recordings in the lecture directory")
+    listing = sub.add_parser(
+        "list",
+        help="list Recordings under the lecture directory, including subfolders",
+    )
     _add_config_flags(listing)
     listing.add_argument(
         "directory",
         nargs="?",
         type=Path,
-        help="directory to list (defaults to the configured lecture directory)",
+        help="directory to list, including subfolders (defaults to the configured lecture directory)",
     )
 
     parse = sub.add_parser("parse", help="process one video into a Lecture Document and plain HTML")
@@ -175,7 +177,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="headless one-shot: parse a Recording and write both views, with no prompts",
     )
     _add_config_flags(notes)
-    _add_recording_flags(notes, find=True)
+    _add_recording_flags(notes, find=True, pick=True)
     _add_parse_option_flags(notes)
     notes.add_argument(
         "--archive-dir",
@@ -236,7 +238,7 @@ def _add_recording_flags(
         parser.add_argument(
             "--latest",
             action="store_true",
-            help="use the newest Recording in the lecture directory itself, not subfolders",
+            help="use the newest Recording under the lecture directory, including subfolders",
         )
     if find:
         parser.add_argument(
@@ -253,7 +255,7 @@ def _add_recording_flags(
         parser.add_argument(
             "--pick",
             action="store_true",
-            help="open a file picker; never available on the headless notes path",
+            help="open a file picker when asked; never a fallback for a failed or ambiguous search",
         )
     parser.add_argument(
         "-o",
@@ -517,11 +519,11 @@ def _cmd_notes(args: argparse.Namespace, argv: list[str]) -> int:
     """One non-interactive run. Human text on stderr, one JSON object on stdout."""
     try:
         config = _config_from_args(args)
-        missing = notes_preflight(config)
-        if missing:
-            _emit_preflight_failure(missing, config, argv)
-            return 1
         recording = _resolve_recording(args)
+        missing = notes_preflight()
+        if missing:
+            _emit_preflight_failure(missing, argv)
+            return 1
         output = resolve_output_dir(recording, args.output, config)
         archive_dir = args.archive_dir if args.archive_dir is not None else config.archive_dir
         result = parse_and_present(
@@ -664,8 +666,8 @@ def _format_selection(pattern: str, folder: Path, matches: tuple[Path, ...]) -> 
     return "\n".join(lines)
 
 
-def notes_preflight(config: AppConfig, env: Environment | None = None) -> tuple[str, ...]:
-    """Doctor checks for the one-shot path. Empty means the run may start."""
+def notes_preflight(env: Environment | None = None) -> tuple[str, ...]:
+    """ffmpeg and transcription checks. Empty means parse may start."""
     environment = env if env is not None else inspect_environment()
     missing: list[str] = []
     if not environment.ffmpeg.found:
@@ -674,8 +676,6 @@ def notes_preflight(config: AppConfig, env: Environment | None = None) -> tuple[
         missing.append("ffprobe")
     if not environment.can_transcribe_audio:
         missing.append("transcriber")
-    if not lectures_dir_accessible(config.lectures_dir):
-        missing.append("lectures_dir")
     return tuple(missing)
 
 
@@ -694,13 +694,13 @@ def format_retry(argv: list[str]) -> str:
 
 
 def pick_recording() -> Path:
-    """File picker for a person at a display. The notes path must not call this."""
+    """File picker for a person at a display. Called only when ``--pick`` was passed."""
     try:
         import tkinter as tk
         from tkinter import filedialog
     except Exception as exc:
         raise PpsError(
-            "the file picker needs a display and is not part of the headless notes path. "
+            "the file picker needs a display. "
             "Pass a Recording path, or use --find with --in. "
             f"({type(exc).__name__}: {exc})"
         ) from exc
@@ -738,14 +738,12 @@ def _emit_json(payload: dict) -> None:
     print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
-def _emit_preflight_failure(missing: tuple[str, ...], config: AppConfig, argv: list[str]) -> None:
-    print("notes stopped before any work.", file=sys.stderr)
+def _emit_preflight_failure(missing: tuple[str, ...], argv: list[str]) -> None:
+    print("notes stopped before parse.", file=sys.stderr)
     if "ffmpeg" in missing or "ffprobe" in missing:
         print(FFMPEG_SETUP, file=sys.stderr)
     if "transcriber" in missing:
         print(TRANSCRIBER_SETUP, file=sys.stderr)
-    if "lectures_dir" in missing:
-        print(lectures_dir_setup(config.lectures_dir), file=sys.stderr)
     retry = format_retry(argv)
     print(f"Retry: {retry}", file=sys.stderr)
     _emit_json({

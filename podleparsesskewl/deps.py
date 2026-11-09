@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from podleparsesskewl.config import DEFAULT_LECTURES_DIR, running_under_wsl, windows_path_to_wsl
+from podleparsesskewl.config import running_under_wsl, windows_path_to_wsl
 
 ENV_FFMPEG = "PODLEPARSESSKEWL_FFMPEG"
 ENV_FFPROBE = "PODLEPARSESSKEWL_FFPROBE"
@@ -55,21 +55,10 @@ Windows: install a legal Windows ffmpeg package and put its bin directory on PAT
 TRANSCRIBER_SETUP = """\
 Install a local transcription engine. This program does not download or install an engine or model files.
 python3 -m pip install -e ".[transcribe]"
+Point --local-files-root at an existing model cache, or pass --whisper-model-path to an existing model snapshot.
+On Nix/WSL, set the libstdc++ path before faster-whisper can run:
+export LD_LIBRARY_PATH="$(nix-build --no-out-link '<nixpkgs>' -A stdenv.cc.cc.lib)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 """.strip()
-
-
-def lectures_dir_setup(path: Path) -> str:
-    """Exact recovery text when the configured lecture directory cannot be seen."""
-    wsl = windows_path_to_wsl(DEFAULT_LECTURES_DIR)
-    return "\n".join([
-        f"The lecture directory is not accessible: {path}",
-        f'The default lecture directory is "{DEFAULT_LECTURES_DIR}"',
-        f'Under WSL that folder is "{wsl}"',
-        "Quote the path; it contains spaces.",
-        f'  --lectures-dir "{DEFAULT_LECTURES_DIR}"',
-        f'  --lectures-dir "{wsl}"',
-        "Or set PODLEPARSESSKEWL_LECTURES_DIR to a folder this machine can see.",
-    ])
 
 
 def format_doctor(env: Environment) -> str:

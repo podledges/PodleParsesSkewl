@@ -157,7 +157,7 @@ Audio-only media, including attached cover artwork, writes `lecture.json` with e
 
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
-End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is the headless one-shot: it runs the doctor checks, parses, and writes `lecture.review.html`, one page with the teaching view and the faithful Still-plus-Said view. Human text goes to stderr. Stdout is one JSON object whose `open` field is that page. Archive is off unless `--archive` or `archive_after_notes` is set. `--no-archive` leaves the Recording in place even then. `notes` takes a Recording path, `--latest`, or `--find` with `--in`. It never opens a file picker. `parse --pick` is the file picker, for a person at a display. The GUI Parse button is `parse`; Parse + Notes is `notes`.
+End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is the headless one-shot: it runs the doctor checks, parses, and writes `lecture.review.html`, one page with the teaching view and the faithful Still-plus-Said view. Human text goes to stderr. Stdout is one JSON object whose `open` field is that page. Archive is off unless `--archive` or `archive_after_notes` is set. `--no-archive` leaves the Recording in place even then. `notes` takes a Recording path, `--latest`, `--find` with `--in`, or `--pick` when a person asks for a file picker. `--pick` is an explicit opt-in. A failed or ambiguous search lists paths and stops. `parse --pick` is the same picker and still writes only the plain view. `notes --pick` writes `lecture.review.html`, the same combined page as every other notes selection. The GUI Parse button is `parse`; Parse + Notes is `notes`.
 
 ### Pi package
 
@@ -226,7 +226,7 @@ C:\Users\ayden\Documents\SCHOOL\NUS Y3S1
 
 Quote it. The path contains spaces. Under WSL the same folder is `/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1`.
 
-That folder holds one subfolder per taught course, named with a leading number such as `5 - CG2027`, and a course keeps its Recordings inside its own folder, for example `5 - CG2027\recordings\Week5-System.mp4`. `pps notes --find Week5 --in` that folder searches recursively and proceeds only when exactly one Recording matches. Zero matches, or more than one, exits non-zero and lists the full paths it found. `pps list` and `pps parse --latest` still look at the lecture directory itself, not its subfolders.
+That folder holds one subfolder per taught course, named with a leading number such as `5 - CG2027`, and a course keeps its Recordings inside its own folder, for example `5 - CG2027\recordings\Week5-System.mp4`. `pps list`, `pps notes --latest`, and `pps notes --find` all search that folder recursively, including course subfolders. `--find` proceeds only when exactly one Recording matches. Zero matches, or more than one, exits non-zero and lists the full paths it found. `--latest` uses the newest Recording under the lecture directory, and still refuses when that directory is not accessible.
 
 On a machine that cannot see that folder:
 
@@ -273,9 +273,9 @@ You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those
 
 `pps notes` writes the faithful Still-plus-Said view in code, with the teaching view, into `lecture.review.html`. Every Still stays in order. Said is escaped and broken into paragraphs on existing newlines, not rewritten. Image `src` stays relative. `/ezLectures` remains the agent skill for a standalone dressed page (`lecture.ez.html`) from an existing Document. It does not re-extract Stills or re-transcribe audio.
 
-`/present` is the sibling skill for teaching notes. It reads the same Document and writes `lecture.present.html`: mental models grounded in Said+Shown, applications only when the lecture gave them, diagrams only where the Shown is not enough. It does not call ffmpeg or Whisper, and it does not fetch scripts or fonts from the network. `pps present` is the local/GUI generator for that same file; an agent following `/present` may then tighten the teaching pass.
+`/present` is the sibling skill for teaching notes. Standalone, it reads the same Document and writes `lecture.present.html`: mental models grounded in Said+Shown, applications only when the lecture gave them, diagrams only where the Shown is not enough. It does not call ffmpeg or Whisper, and it does not fetch scripts or fonts from the network. `pps present` is the local generator for that same file. When the run was `pps notes`, the teaching pass edits the teaching half of `lecture.review.html` in place and does not retarget standalone `/present`.
 
-`/parse-skewl` runs `pps parse`. `/parse-skewl-notes` runs `pps notes` (headless parse, both views in `lecture.review.html`, archive off unless `--archive`) and then the `/present` teaching pass.
+`/parse-skewl` runs `pps parse`. `/parse-skewl-notes` runs `pps notes` (headless parse, both views in `lecture.review.html`, archive off unless `--archive`) and then tightens the teaching half of that page in place.
 
 Canonical skill files live under `.agents/skills/<skill>/SKILL.md`. `.claude/skills/` and `.grok/skills/` hold discovery pointers only.
 
