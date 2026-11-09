@@ -20,8 +20,10 @@ from podleparsesskewl.cli import (
 from podleparsesskewl.config import AppConfig, find_recordings, list_recordings, load_config
 from podleparsesskewl.deps import FFMPEG_SETUP, TRANSCRIBER_SETUP
 from podleparsesskewl.document import Cue, LectureDocument, Section, SourceInfo, Still, Transcript
+from podleparsesskewl.media import Probe
 from podleparsesskewl.present import REVIEW_NAME, render_review
 from podleparsesskewl.report import render_faithful_html
+from podleparsesskewl.workflow import build_notes_argv
 
 
 def _document() -> LectureDocument:
@@ -72,6 +74,16 @@ def _ready_env() -> SimpleNamespace:
         ffmpeg=found,
         ffprobe=found,
         can_transcribe_audio=True,
+        can_parse_video=True,
+    )
+
+
+def _video_ready_no_engine() -> SimpleNamespace:
+    found = SimpleNamespace(found=True, path=Path("/usr/bin/ffprobe"))
+    return SimpleNamespace(
+        ffmpeg=found,
+        ffprobe=found,
+        can_transcribe_audio=False,
         can_parse_video=True,
     )
 
@@ -384,6 +396,101 @@ class NotesContractTests(unittest.TestCase):
             can_transcribe_audio=True,
         )
         self.assertEqual(notes_preflight(env=broken), ("ffprobe",))
+
+    def test_sidecar_notes_do_not_require_a_transcription_engine(self) -> None:
+        env = _video_ready_no_engine()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "Week5-System.mp4"
+            recording.write_bytes(b"mp4")
+            for suffix in (".srt", ".vtt", ".json"):
+                sidecar = Path(str(recording.with_suffix("")) + suffix)
+                sidecar.write_text("1\n00:00:00,000 --> 00:00:01,000\nSaid.\n", encoding="utf-8")
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                    with mock.patch(
+                        "podleparsesskewl.cli.parse_and_present",
+                        return_value=_notes_run(recording),
+                    ) as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main(["notes", str(recording), "--no-archive"])
+                sidecar.unlink()
+                self.assertEqual(code, 0, stderr.getvalue())
+                run.assert_called_once()
+                self.assertNotIn(TRANSCRIBER_SETUP, stderr.getvalue())
+                payload = json.loads(stdout.getvalue())
+                self.assertEqual(payload["schema"], "podleparsesskewl.notes/v1")
+                self.assertNotIn("error", payload)
+
+            caption = folder / "captions.srt"
+            caption.write_text("1\n00:00:00,000 --> 00:00:01,000\nSaid.\n", encoding="utf-8")
+            for argv in (
+                ["notes", str(recording), "--transcript", str(caption), "--no-archive"],
+                build_notes_argv(str(recording), transcript=str(caption)),
+            ):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                    with mock.patch(
+                        "podleparsesskewl.cli.parse_and_present",
+                        return_value=_notes_run(recording),
+                    ) as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main(argv)
+                self.assertEqual(code, 0, stderr.getvalue())
+                run.assert_called_once()
+                self.assertEqual(run.call_args.kwargs["options"].sidecar, caption)
+                self.assertNotIn(TRANSCRIBER_SETUP, stderr.getvalue())
+                payload = json.loads(stdout.getvalue())
+                self.assertEqual(payload["schema"], "podleparsesskewl.notes/v1")
+                self.assertNotIn("error", payload)
+
+    def test_notes_without_audio_reports_nothing_to_transcribe(self) -> None:
+        env = _video_ready_no_engine()
+        probe = Probe(duration_seconds=4.0, width=16, height=9, has_audio=False, has_video=True)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "Week5-System.mp4"
+            recording.write_bytes(b"mp4")
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                with mock.patch("podleparsesskewl.pipeline.inspect_environment", return_value=env):
+                    with mock.patch("podleparsesskewl.cli.probe_recording", return_value=probe):
+                        with mock.patch("podleparsesskewl.pipeline.probe_recording", return_value=probe):
+                            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                                code = main(["notes", str(recording), "--no-archive"])
+        self.assertEqual(code, 2)
+        err = stderr.getvalue()
+        self.assertIn("no audio track", err)
+        self.assertIn("nothing to transcribe", err)
+        self.assertNotIn(TRANSCRIBER_SETUP, err)
+        self.assertNotIn("preflight", err)
+        self.assertEqual(json.loads(stdout.getvalue())["error"], "failed")
+
+    def test_notes_that_will_transcribe_still_require_an_engine(self) -> None:
+        env = _video_ready_no_engine()
+        probe = Probe(duration_seconds=4.0, width=16, height=9, has_audio=True, has_video=True)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "Week5-System.mp4"
+            recording.write_bytes(b"mp4")
+            document = Path(str(recording.with_suffix("")) + ".json")
+            document.write_text(
+                '{"schema": "podleparsesskewl.lecture/v1", "stills": [], "sections": [], "transcript": {}}',
+                encoding="utf-8",
+            )
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                with mock.patch("podleparsesskewl.cli.probe_recording", return_value=probe) as probed:
+                    with mock.patch("podleparsesskewl.cli.parse_and_present") as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main(["notes", str(recording), "--no-archive"])
+        self.assertEqual(code, 1)
+        run.assert_not_called()
+        probed.assert_called_once()
+        self.assertIn(TRANSCRIBER_SETUP, stderr.getvalue())
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["error"], "preflight")
+        self.assertEqual(payload["missing"], ["transcriber"])
 
     def test_unreachable_lectures_dir_does_not_block_a_path_or_find(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

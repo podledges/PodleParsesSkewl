@@ -17,7 +17,7 @@ Done when `pps notes` has exited 0 and stdout is one JSON object whose `open` fi
 
 ## Steps
 
-1. Work from the PodleParsesSkewl repository root. Resolve the Recording first. A bad selection is reported even when ffmpeg or a transcription engine is missing. `pps notes` then stops before parse if either tool is missing. The stderr text is the setup and the exact command to retry. An explicit Recording path and `--find` with an explicit `--in` folder are not blocked because the configured lecture directory is unreachable. `--latest` still refuses an inaccessible lecture directory.
+1. Work from the PodleParsesSkewl repository root. Resolve the Recording first. A bad selection is reported even when ffmpeg or a transcription engine is missing. `pps notes` then stops before parse if ffmpeg or ffprobe is missing, or if a transcription engine is missing and Said will be transcribed. A `--transcript` or an adjacent sidecar supplies Said without the engine, and a Recording with no audio track is not a missing-engine failure. The stderr text is the setup and the exact command to retry. An explicit Recording path and `--find` with an explicit `--in` folder are not blocked because the configured lecture directory is unreachable. `--latest` still refuses an inaccessible lecture directory.
 2. Resolve the Recording by a path, `--latest`, `--find` with `--in`, or `--pick` when the person asked for a file picker. `list`, `--latest`, and `--find` search recursively, including course subfolders. Exactly one `--find` match proceeds. Zero or many is a non-zero exit that lists the full paths; report those paths and stop. Lecture files stay local. Do not upload them.
 3. Run the shared command. Quote paths that contain spaces:
 

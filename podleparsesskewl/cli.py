@@ -30,6 +30,7 @@ from podleparsesskewl.deps import (
     inspect_environment,
 )
 from podleparsesskewl.errors import PpsError, writing
+from podleparsesskewl.media import probe_recording
 from podleparsesskewl.pipeline import (
     ParseOptions,
     copy_still_images,
@@ -45,7 +46,12 @@ from podleparsesskewl.stills import (
     DEFAULT_SAMPLE_FPS,
 )
 from podleparsesskewl.timefmt import format_clock
-from podleparsesskewl.transcribe import DEFAULT_LOCAL_FILES_ROOT, DEFAULT_WHISPER_MODEL, TranscriptionOptions
+from podleparsesskewl.transcribe import (
+    DEFAULT_LOCAL_FILES_ROOT,
+    DEFAULT_WHISPER_MODEL,
+    TranscriptionOptions,
+    installed_engine_required,
+)
 from podleparsesskewl.workflow import (
     parse_and_present,
     present_lecture,
@@ -520,7 +526,7 @@ def _cmd_notes(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         config = _config_from_args(args)
         recording = _resolve_recording(args)
-        missing = notes_preflight()
+        missing = notes_preflight(recording=recording, sidecar=args.transcript)
         if missing:
             _emit_preflight_failure(missing, argv)
             return 1
@@ -666,17 +672,52 @@ def _format_selection(pattern: str, folder: Path, matches: tuple[Path, ...]) -> 
     return "\n".join(lines)
 
 
-def notes_preflight(env: Environment | None = None) -> tuple[str, ...]:
-    """ffmpeg and transcription checks. Empty means parse may start."""
+def notes_preflight(
+    env: Environment | None = None,
+    *,
+    recording: Path | None = None,
+    sidecar: Path | None = None,
+) -> tuple[str, ...]:
+    """Names of missing tools that block this notes run. Empty means parse may start."""
     environment = env if env is not None else inspect_environment()
     missing: list[str] = []
     if not environment.ffmpeg.found:
         missing.append("ffmpeg")
     if not environment.ffprobe.found:
         missing.append("ffprobe")
-    if not environment.can_transcribe_audio:
+    if not environment.can_transcribe_audio and _notes_need_installed_engine(
+        environment, recording, sidecar
+    ):
         missing.append("transcriber")
     return tuple(missing)
+
+
+def _notes_need_installed_engine(
+    env: Environment,
+    recording: Path | None,
+    sidecar: Path | None,
+) -> bool:
+    return installed_engine_required(
+        recording,
+        sidecar=sidecar,
+        has_audio=_probed_has_audio(env, recording, sidecar),
+    )
+
+
+def _probed_has_audio(
+    env: Environment,
+    recording: Path | None,
+    sidecar: Path | None,
+) -> bool | None:
+    if not installed_engine_required(recording, sidecar=sidecar, has_audio=None):
+        return None
+    if recording is None or not recording.is_file():
+        return None
+    if not env.ffmpeg.found or not env.ffprobe.found:
+        return None
+    if getattr(env.ffprobe, "path", None) is None:
+        return None
+    return probe_recording(recording, env).has_audio
 
 
 def quote_command(parts: list[str], *, windows: bool) -> str:
