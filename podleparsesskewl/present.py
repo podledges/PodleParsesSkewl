@@ -14,9 +14,11 @@ from pathlib import Path
 
 from podleparsesskewl.document import LectureDocument, Still
 from podleparsesskewl.errors import writing
+from podleparsesskewl.report import FAITHFUL_STYLE, render_faithful_fragment
 from podleparsesskewl.timefmt import format_clock
 
 PRESENT_NAME = "lecture.present.html"
+REVIEW_NAME = "lecture.review.html"
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 _FILLER_START = re.compile(
@@ -80,19 +82,15 @@ class _Topic:
 
 def render_present(document: LectureDocument) -> str:
     """Build a self-contained teaching Report. Ground every claim in Said or Shown."""
+    return _html_page(document.title, _STYLE, render_present_main(document))
+
+
+def render_present_main(document: LectureDocument) -> str:
+    """Teaching Report body, without the document shell."""
     said_by_still = _said_by_still(document)
     topics = _topics(document, said_by_still)
     parts = [
-        "<!DOCTYPE html>",
-        '<html lang="en">',
-        "<head>",
-        '<meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>{html.escape(document.title)}</title>",
-        f"<style>{_STYLE}</style>",
-        "</head>",
-        "<body>",
-        '<main class="shell">',
+        '<main class="shell" id="teaching">',
         '<header class="hero">',
         '<p class="eyebrow">PodleParsesSkewl Teaching Report</p>',
         f"<h1>{html.escape(document.title)}</h1>",
@@ -122,8 +120,41 @@ def render_present(document: LectureDocument) -> str:
     parts.append("<h2>Review prompts</h2>")
     parts.append(_review_prompts(topics))
     parts.append("</section>")
-    parts.extend(["</main>", "</body>", "</html>", ""])
+    parts.append("</main>")
     return "\n".join(parts)
+
+
+def render_review(document: LectureDocument) -> str:
+    """One page: teaching view, then the faithful Still-plus-Said view.
+
+    Both views are in the file the reader opens. A short jump line does not
+    hide either view. The faithful half does not merge or rewrite Stills or Said.
+    """
+    body = "\n".join([
+        '<p class="jumps"><a href="#teaching">Teaching</a>'
+        ' \u00b7 <a href="#shown-and-said">Shown and Said</a></p>',
+        render_present_main(document),
+        render_faithful_fragment(document),
+    ])
+    return _html_page(document.title, _STYLE + "\n" + FAITHFUL_STYLE, body)
+
+
+def _html_page(title: str, style: str, body: str) -> str:
+    return "\n".join([
+        "<!DOCTYPE html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>{html.escape(title)}</title>",
+        f"<style>{style}</style>",
+        "</head>",
+        "<body>",
+        body,
+        "</body>",
+        "</html>",
+        "",
+    ])
 
 
 def write_present(document: LectureDocument, output_dir: Path) -> Path:
@@ -131,6 +162,15 @@ def write_present(document: LectureDocument, output_dir: Path) -> Path:
     with writing(f"the teaching Report {path}"):
         output_dir.mkdir(parents=True, exist_ok=True)
         path.write_text(render_present(document), encoding="utf-8")
+    return path
+
+
+def write_review(document: LectureDocument, output_dir: Path) -> Path:
+    """Write the one page a successful notes run opens."""
+    path = output_dir / REVIEW_NAME
+    with writing(f"the review {path}"):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(render_review(document), encoding="utf-8")
     return path
 
 

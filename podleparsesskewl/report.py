@@ -34,6 +34,81 @@ hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
 """.strip()
 
 
+FAITHFUL_STYLE = """
+.jumps { font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.82rem; max-width: 40rem; margin: 1.4rem auto 0; padding: 0 1.2rem; }
+.jumps a { color: #5c5348; }
+.faithful { max-width: 40rem; margin: 0 auto 3rem; padding: 0 1.2rem 1rem; color: #1a1714;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif; line-height: 1.65; background: transparent; }
+.faithful .eyebrow, .faithful .when { font-family: "Segoe UI", system-ui, sans-serif; }
+.faithful .eyebrow { letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.72rem; color: #7a6a58; margin: 1.6rem 0 0.3rem; }
+.faithful h1 { font-size: 1.7rem; font-weight: 600; margin: 0.3rem 0 1.2rem; }
+.faithful img.still { width: 100%; height: auto; display: block; border: 1px solid #c9c0b4;
+  box-shadow: 0 2px 8px rgba(40, 30, 20, 0.12); background: #efe8dc; }
+.faithful .when { color: #5c5348; font-size: 0.82rem; margin: 0.55rem 0 0.7rem; }
+.faithful hr.rule { border: none; border-top: 1px solid #d8cfc2; margin: 0.7rem 0 0.9rem; }
+.faithful hr.between { border: none; border-top: 2px solid #b9ae9f; margin: 2.6rem 0; }
+.faithful .said p { margin: 0.35rem 0; white-space: pre-wrap; }
+""".strip()
+
+
+def render_faithful_fragment(document: LectureDocument) -> str:
+    """Still-by-Still Shown and Said. Does not merge, drop, or rewrite Said.
+
+    Paragraph breaks follow existing newlines only. Image ``src`` stays the
+    Document's relative path so the folder remains portable.
+    """
+    said_by_still = _said_by_still(document)
+    parts = [
+        '<section id="shown-and-said" class="faithful">',
+        '<p class="eyebrow">Shown and Said</p>',
+        f"<h1>{html.escape(document.title)}</h1>",
+    ]
+    for index, still in enumerate(document.stills):
+        if index:
+            parts.append('<hr class="between">')
+        parts.append(f'<section id="faithful-{html.escape(still.id)}">')
+        parts.append(
+            f'<img class="still" src="{html.escape(still.image, quote=True)}" '
+            f'alt="Still {html.escape(str(still.index))}">'
+        )
+        parts.append(f'<p class="when">{html.escape(_when(still))}</p>')
+        paragraphs = _said_paragraphs(said_by_still.get(still.id, ""))
+        if paragraphs:
+            parts.append('<hr class="rule">')
+            parts.append(f'<div class="said">{paragraphs}</div>')
+        parts.append("</section>")
+    parts.append("</section>")
+    return "\n".join(parts)
+
+
+def render_faithful_html(document: LectureDocument) -> str:
+    """Self-contained faithful review. Same constraints as the fragment."""
+    return _html_page(document.title, FAITHFUL_STYLE, render_faithful_fragment(document))
+
+
+def _html_page(title: str, style: str, body: str) -> str:
+    return "\n".join([
+        "<!DOCTYPE html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>{html.escape(title)}</title>",
+        f"<style>{style}</style>",
+        "</head>",
+        "<body>",
+        body,
+        "</body>",
+        "</html>",
+        "",
+    ])
+
+
+def _said_paragraphs(said: str) -> str:
+    """Escape Said and break paragraphs on existing newlines. Do not rewrite it."""
+    return "\n".join(f"<p>{html.escape(line)}</p>" for line in said.split("\n") if line != "")
+
+
 def render_html(document: LectureDocument) -> str:
     """Render the plain program HTML view: Shown, separator, Said, per Still.
 

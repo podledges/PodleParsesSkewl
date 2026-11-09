@@ -14,7 +14,7 @@ Turn an existing Lecture Document into a dressed HTML review page.
 
 ## Completion
 
-Done when a single HTML file is written that a person can open in a browser and scan Still by Still, each Shown paired with its Said. Do not extract frames, do not transcribe, do not invent speech or images.
+Done when a single HTML file is written that a person can open in a browser and scan Still by Still, each Shown paired with its Said. Do not extract frames, do not transcribe, do not invent speech or images. `pps notes` already writes this aesthetic, with the teaching view, into `lecture.review.html`. Use this skill only when someone wants the standalone `lecture.ez.html` from an existing Document.
 
 ## Steps
 

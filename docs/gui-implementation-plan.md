@@ -34,7 +34,7 @@ Current GUI gaps (confirmed in `gui.py`, not only in the scout):
 6. The configured lecture directory is not offered as a recent list.
 7. The helper sentence uses a fixed window (`740x620`) and is known to clip.
 8. There is no cancel contract. Closing during a run is not modeled.
-9. The archive checkbox is always visible and seeded from `config.archive_after_notes` (default true).
+9. The archive checkbox is always visible and seeded from `config.archive_after_notes` (default false).
 
 ### Fleet scout (direction, not a repo spec)
 
@@ -79,7 +79,7 @@ Tracked in [#6](https://github.com/podledges/PodleParsesSkewl/issues/6). Impleme
 | Q1 | Primary launch habit | A: double-click Windows app. B: Terminal/WSL, add `pps ui` TUI | A. Keep CLI. No TUI yet |
 | Q2 | Default success page | A: match chosen mode. B: always notes. C: always faithful review | A. Remember last-used mode |
 | Q3 | Recording selection | A: five newest, require a click, plus Browse. B: preselect newest. C: always file picker | A. Highlight newest, do not auto-commit |
-| Q4 | GUI archive default | A: off on first GUI run, then remember. B: on (current config default). C: always follow toml | A. Show archive only for Teaching notes |
+| Q4 | GUI archive default | A: off on first GUI run, then remember. B: on (config default is false). C: always follow toml | A. Show archive only for Teaching notes |
 | Q5 | Setup boundary | A: inline preflight and Retry. B: bundle ffmpeg and/or transcriber | A. Keep media tools external |
 
 Q4 is already a behavior change relative to today's checkbox.
@@ -150,7 +150,7 @@ Deferred: TUI, bundled ffmpeg/models, batch processing, Cancel, web frontend, Do
 - **Goal:** Replace the path-form window with choose Recording, choose result, run and open. Preserve CLI, config, local-only processing, output formats, and archive safety.
 - **User-visible behavior:** Recent five Recordings plus Browse; Review vs Teaching notes; archive only for notes, off on first GUI run then remembered (Q4 default); named phases; inline setup/errors; success actions from #9; Advanced disclosure for output/sidecar/model/offline/thresholds; `PodleSkewl.exe` and `pps-gui.exe` still launch the same no-console window.
 - **Acceptance criteria:** Terminal is not required for the happy path; default screen is Recording + mode + one primary action; no fake percentages; archive explicit before Start and reflected from typed results; errors keep selections and generated Reports; presentation renders #7; workflow calls return typed objects rather than only `cli.main(argv)`; zero new runtime dependencies; packaging still excludes ffmpeg/models; unit suite passes with the synthetic MP4 test executed.
-- **Implementation notes:** Refactor `podleparsesskewl/gui.py`. Populate recent list via `load_config` and `list_recordings`. Use `vista` ttk theme when present. Grid layout, ~720 minimum width, no hard-coded wrap lengths that clip at 125/150% scaling. Remember last-used mode and archive choice in a small GUI preference store without silently changing CLI `archive_after_notes` default true. Close-during-run confirms; it does not cancel.
+- **Implementation notes:** Refactor `podleparsesskewl/gui.py`. Populate recent list via `load_config` and `list_recordings`. Use `vista` ttk theme when present. Grid layout, ~720 minimum width, no hard-coded wrap lengths that clip at 125/150% scaling. Remember last-used mode and archive choice in a small GUI preference store without silently changing CLI `archive_after_notes` default false. Close-during-run confirms; it does not cancel.
 - **Testing notes:** Recent list, archive disclosure, Start only when READY, success actions use typed paths, failure retains selection, Start disabled while RUNNING. Keep `tests/test_gui_commands.py` unless argv helpers go away. Windows smoke lives in #11.
 - **Dependencies / order:** Depends on #7, #8, #9, and Q1 remaining on the Windows app path.
 - **Risk notes:** Tk DPI. Background-thread UI hops. Historical `pps-gui.exe` must keep working. If Q1 flips, close this as not planned; do not also build a TUI in the same issue.
