@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import shutil
 import sys
@@ -208,6 +209,10 @@ def _build_parser() -> argparse.ArgumentParser:
     histogram = sub.add_parser(
         "histogram",
         help="print or check the per-Still timing signal for a Lecture Document",
+        description=(
+            "Thresholds come from an existing lecture.signal.json, else the defaults; "
+            "threshold flags override them for printing and --write."
+        ),
     )
     histogram.add_argument(
         "document",
@@ -581,20 +586,27 @@ def _cmd_histogram(args: argparse.Namespace) -> int:
     if sidecar.is_file():
         stills_text = load_stills_text(sidecar, {still.id for still in document.stills})
 
+    signal_path = folder / SIGNAL_JSON
     stored = None
-    if args.check:
-        signal_path = folder / SIGNAL_JSON
-        if not signal_path.is_file():
-            thresholds = _histogram_thresholds(args)
-            computed = compute_signal(document, stills_text, thresholds)
-            _print_histogram_views(computed, grades=None)
-            print("no lecture.signal.json beside the Document; run pps histogram --write")
-            _print_grade_status(folder, document, grades=None, errors=[], warnings=[])
-            return 1
-        stored = load_signal(signal_path)
-        thresholds = SignalThresholds.from_json_dict(stored.get("thresholds", {}))
-    else:
-        thresholds = _histogram_thresholds(args)
+    if signal_path.is_file():
+        try:
+            stored = load_signal(signal_path)
+        except PpsError as exc:
+            if args.check:
+                raise
+            print(f"warning: {exc}; using default thresholds", file=sys.stderr)
+    if args.check and stored is None:
+        computed = compute_signal(document, stills_text, SignalThresholds())
+        _print_histogram_views(computed, grades=None)
+        print("no lecture.signal.json beside the Document; run pps histogram --write")
+        _print_grade_status(folder, document, grades=None, errors=[], warnings=[])
+        return 1
+    base = (
+        SignalThresholds.from_json_dict(stored.get("thresholds", {}))
+        if stored is not None
+        else SignalThresholds()
+    )
+    thresholds = _histogram_thresholds(args, base)
 
     computed = compute_signal(document, stills_text, thresholds)
     grades_payload = None
@@ -635,7 +647,7 @@ def _cmd_histogram(args: argparse.Namespace) -> int:
     return 0
 
 
-def _histogram_thresholds(args: argparse.Namespace) -> SignalThresholds:
+def _histogram_thresholds(args: argparse.Namespace, base: SignalThresholds) -> SignalThresholds:
     kwargs: dict[str, float | int] = {}
     if args.pause_seconds is not None:
         kwargs["pause_seconds"] = args.pause_seconds
@@ -645,7 +657,7 @@ def _histogram_thresholds(args: argparse.Namespace) -> SignalThresholds:
         kwargs["window_size"] = args.window_size
     if args.window_stride is not None:
         kwargs["window_stride"] = args.window_stride
-    return SignalThresholds(**kwargs)
+    return dataclasses.replace(base, **kwargs)
 
 
 def _print_histogram_views(computed, grades=None) -> None:

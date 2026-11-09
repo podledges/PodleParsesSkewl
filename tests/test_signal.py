@@ -23,6 +23,7 @@ from podleparsesskewl.signal import (
     STILLS_TEXT_NAME,
     STILLS_TEXT_SCHEMA,
     TAUGHT_NAME,
+    SignalThresholds,
     StillText,
     compare_signal,
     compute_signal,
@@ -756,6 +757,37 @@ class HistogramCliTests(unittest.TestCase):
                 code = main(["histogram", str(path), "--check"])
             self.assertEqual(code, 1)
             self.assertIn("still-001 spoken_seconds", stdout.getvalue())
+
+    def test_tuned_thresholds_survive_write_and_pass_check(self) -> None:
+        document = _document(
+            [(0, 10, 1), (10, 20, 2), (20, 30, 3)],
+            [(1, 8, "talk " * 8), (11, 18, "talk " * 8), (21, 28, "talk " * 8)],
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(document, folder)
+            write_signal_views(
+                document,
+                folder,
+                thresholds=SignalThresholds(pass_through_seconds=5.0, window_size=2, window_stride=1),
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["histogram", str(path), "--write"]), 0)
+            stored = json.loads((folder / SIGNAL_JSON).read_text(encoding="utf-8"))
+            self.assertEqual(stored["thresholds"]["pass_through_seconds"], 5.0)
+            self.assertEqual(stored["thresholds"]["window_size"], 2)
+            self.assertEqual(stored["thresholds"]["window_stride"], 1)
+            self.assertEqual(len(stored["windows"]), 2)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["histogram", str(path), "--check"]), 0)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["histogram", str(path), "--write", "--window-size", "3"]), 0)
+            stored = json.loads((folder / SIGNAL_JSON).read_text(encoding="utf-8"))
+            self.assertEqual(stored["thresholds"]["window_size"], 3)
+            self.assertEqual(stored["thresholds"]["window_stride"], 1)
+            self.assertEqual(stored["thresholds"]["pass_through_seconds"], 5.0)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["histogram", str(path), "--check"]), 0)
 
     def test_check_malformed_grades_and_usage_errors(self) -> None:
         document = _document([(0, 10, 1)], [(1, 8, "talk " * 8)])

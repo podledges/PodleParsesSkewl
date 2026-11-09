@@ -167,7 +167,7 @@ End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain 
 
 Every `pps parse` (and therefore `pps notes`) writes `lecture.signal.json` and `lecture.signal.md` beside the Document. The JSON holds elapsed and spoken seconds per Still, silence, dead air, pass-through and boilerplate flags, revisit links when the Document recorded `appearance`, and sliding windows of 8 Stills every 4. The Markdown view is two ASCII histograms plus a per-Still table.
 
-`pps histogram` reprints those histograms from the Document. `--check` recomputes with the thresholds stored in `lecture.signal.json` and exits 1 if anything other than `generated_at` differs, then validates `lecture.grades.json` when that file is present. `--write` refreshes both signal files. A Lecture parsed before this version loads and renders; revisit fields stay empty until it is parsed again.
+`pps histogram` reprints those histograms from the Document. `--check` recomputes with the thresholds stored in `lecture.signal.json` and exits 1 if anything other than `generated_at` differs, then validates `lecture.grades.json` when that file is present. `--write` refreshes both signal files. Printing and `--write` reuse the thresholds stored in `lecture.signal.json` when it exists; explicit threshold flags override them. A Lecture parsed before this version loads and renders; revisit fields stay empty until it is parsed again.
 
 Histogram legend (word markers in the Notes column):
 

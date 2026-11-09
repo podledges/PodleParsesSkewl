@@ -210,6 +210,16 @@ class WorkFolderTests(unittest.TestCase):
             )
 
     def test_parse_writes_signal_views_and_appearance_ids(self) -> None:
+        result = self._parse_two_stills()
+        self.assertEqual([still.appearance for still in result.document.stills], [1, 2])
+        payload = result.signal
+        self.assertTrue(payload["inputs"]["appearance_recorded"])
+
+    def test_parse_paragraph_pause_does_not_reach_the_signal(self) -> None:
+        result = self._parse_two_stills(pause_seconds=3.0)
+        self.assertEqual(result.signal["thresholds"]["pause_seconds"], 1.5)
+
+    def _parse_two_stills(self, **option_overrides):
         from types import SimpleNamespace
         from unittest import mock
 
@@ -265,13 +275,14 @@ class WorkFolderTests(unittest.TestCase):
                         "podleparsesskewl.pipeline.extract_stills_png", side_effect=fake_still
                     ):
                         result = parse_recording(
-                            recording, ParseOptions(output_dir=output), env=env
+                            recording,
+                            ParseOptions(output_dir=output, **option_overrides),
+                            env=env,
                         )
             self.assertTrue(result.signal_path.is_file())
             self.assertTrue(result.signal_view_path.is_file())
-            self.assertEqual([still.appearance for still in result.document.stills], [1, 2])
-            payload = json.loads(result.signal_path.read_text(encoding="utf-8"))
-            self.assertTrue(payload["inputs"]["appearance_recorded"])
+            signal = json.loads(result.signal_path.read_text(encoding="utf-8"))
+        return SimpleNamespace(document=result.document, signal=signal)
 
 
 class FailedParseCleanupTests(unittest.TestCase):

@@ -28,7 +28,7 @@ Named constants in `signal.py`, recorded on the JSON, a few exposed as CLI flags
 
 | Constant | Default | Flag |
 | --- | --- | --- |
-| `PAUSE_SECONDS` | 1.5 | `--pause-seconds` |
+| `PAUSE_SECONDS` | 1.5 | `pps histogram --pause-seconds` (`pps parse --pause-seconds` only groups transcript paragraphs) |
 | `DEAD_AIR_SECONDS` | 2.0 | |
 | `MIN_WORDS_PER_SECOND` | 0.5 | |
 | `PASS_THROUGH_SECONDS` | 3.0 | `--pass-through-seconds` |
@@ -87,7 +87,7 @@ pps histogram <...> --check
 pps histogram <...> --write [--pause-seconds F] [--pass-through-seconds F] [--window-size N] [--window-stride N]
 ```
 
-Resolves the Document like `present`. Loads `lecture.stills-text.json` from the Document folder when present. Default prints both histograms. `--check` compares a recomputation with `lecture.signal.json` (every field except `generated_at`) and validates grades when present; exit 1 on any difference or grade error. `--write` overwrites the two signal files. `--check` with `--write` or with threshold flags is a usage error. There is no `-o`; files always sit beside the Document.
+Resolves the Document like `present`. Loads `lecture.stills-text.json` from the Document folder when present. Default prints both histograms. `--check` compares a recomputation with `lecture.signal.json` (every field except `generated_at`) and validates grades when present; exit 1 on any difference or grade error. `--write` overwrites the two signal files. Without threshold flags, printing and `--write` reuse the thresholds stored in an existing `lecture.signal.json` (defaults otherwise); each explicit flag overrides its stored value. `--check` with `--write` or with threshold flags is a usage error. There is no `-o`; files always sit beside the Document.
 
 Grade errors fail `--check`. Warnings (printed, do not fail): `fluff_filtered` on a Still whose spoken time is at or below 30 s; a `prescore_zero` Still graded above 0; `signal_generated_at` older than the stored signal.
 

@@ -211,7 +211,6 @@ def parse_recording(
             output_dir,
             stills_text=None,
             thresholds=SignalThresholds(
-                pause_seconds=options.pause_seconds,
                 pass_through_seconds=options.pass_through_seconds,
                 window_size=options.window_size,
                 window_stride=options.window_stride,
