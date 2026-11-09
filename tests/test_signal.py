@@ -791,7 +791,14 @@ class HistogramCliTests(unittest.TestCase):
 
     def test_write_repairs_malformed_stored_thresholds(self) -> None:
         document = _document([(0, 10, 1)], [(1, 8, "talk " * 8)])
-        for bad in (None, {"window_size": "8"}):
+        for bad in (
+            None,
+            {"window_size": "8"},
+            {"tangent_overlap": "0.2"},
+            {"min_token_chars": 3.0},
+            {"high_density_quantile": None},
+            {"fluff_spoken_seconds": True},
+        ):
             with self.subTest(thresholds=bad), tempfile.TemporaryDirectory() as raw:
                 folder = Path(raw)
                 path = write_document(document, folder)

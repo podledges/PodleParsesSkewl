@@ -181,6 +181,11 @@ class SignalThresholds:
         if not isinstance(payload, dict):
             raise PpsError("signal thresholds must be a JSON object")
         known = {field: payload[field] for field in cls.__dataclass_fields__ if field in payload}
+        for name, value in known.items():
+            expected = (int,) if cls.__dataclass_fields__[name].type == "int" else (int, float)
+            if isinstance(value, bool) or not isinstance(value, expected):
+                kind = "an integer" if expected == (int,) else "a number"
+                raise PpsError(f"invalid signal thresholds: {name} must be {kind}")
         try:
             thresholds = cls(**known)
             thresholds.validate()
