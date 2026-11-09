@@ -43,3 +43,35 @@ _Avoid_: course, class, subject when meaning the folder
 **Knowledge tree**:
 What to know for a Module and what to read first. One Markdown file per Module.
 _Avoid_: syllabus, plan when meaning the file
+
+**Elapsed**:
+The wall-clock seconds a Still was on screen, `end_seconds - start_seconds`, reported rounded to the nearest second.
+_Avoid_: dwell, duration (duration is the Recording's)
+
+**Spoken**:
+The seconds of speech that belong to a Still after noise is removed.
+_Avoid_: active, talk time
+
+**Signal**:
+The per-Still and per-window measurements derived from a Document. `lecture.signal.json` is the machine form, `lecture.signal.md` the human form.
+_Avoid_: telemetry, metrics
+
+**Window**:
+A run of 8 consecutive Stills, starting every 4, labelled by its first and last Still index (`1-8`).
+_Avoid_: frame, bin
+
+**Appearance**:
+The group of Stills that show the same look; two Stills with the same appearance are one page revisited.
+_Avoid_: slide identity, duplicate
+
+**Grade**:
+An agent's importance score 0 to 3 for one Still, with its reasons, in `lecture.grades.json`.
+_Avoid_: rating, rank
+
+**Brief**:
+The grade-driven priority view `lecture.brief.md`.
+_Avoid_: summary when meaning this file
+
+**Taught**:
+The full-transcript knowledge report `lecture.taught.md`. Brief and Taught are Reports (views), never Documents.
+_Avoid_: transcript when meaning this file

@@ -314,3 +314,34 @@ class ReportTests(unittest.TestCase):
             html_path, md_path = write_plain_views(loaded, folder)
             self.assertTrue(html_path.is_file())
             self.assertTrue(md_path.is_file())
+
+    def test_appearance_round_trip_and_legacy_documents(self) -> None:
+        from podleparsesskewl.document import Still
+        from podleparsesskewl.errors import PpsError
+
+        document = _document()
+        with_ids = LectureDocument(
+            title=document.title,
+            source=document.source,
+            stills=(
+                Still("still-001", 1, 0.0, 5.0, "stills/still-001.png", 1),
+                Still("still-002", 2, 5.0, 10.0, "stills/still-002.png", 1),
+            ),
+            transcript=document.transcript,
+            sections=document.sections,
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            path = write_document(with_ids, folder)
+            loaded = load_document(path)
+            self.assertEqual(loaded.stills[0].appearance, 1)
+            self.assertEqual(loaded.stills[1].appearance, 1)
+        payload = document.to_json_dict()
+        payload["stills"][0].pop("appearance", None)
+        legacy = LectureDocument.from_json_dict(payload)
+        self.assertIsNone(legacy.stills[0].appearance)
+        for value in (0, True, "1"):
+            broken = document.to_json_dict()
+            broken["stills"][0]["appearance"] = value
+            with self.assertRaises(PpsError):
+                LectureDocument.from_json_dict(broken)

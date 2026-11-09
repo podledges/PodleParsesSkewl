@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -108,11 +109,17 @@ class ParseAndPresentTests(unittest.TestCase):
                 md_path = output / "lecture.md"
                 html_path.write_text("<html></html>", encoding="utf-8")
                 md_path.write_text("# md\n", encoding="utf-8")
+                signal_path = output / "lecture.signal.json"
+                signal_view_path = output / "lecture.signal.md"
+                signal_path.write_text("{}\n", encoding="utf-8")
+                signal_view_path.write_text("histogram\n", encoding="utf-8")
                 return ParseResult(
                     document=document,
                     document_path=document_path,
                     html_path=html_path,
                     markdown_path=md_path,
+                    signal_path=signal_path,
+                    signal_view_path=signal_view_path,
                 )
 
             with mock.patch("podleparsesskewl.workflow.parse_recording", side_effect=fake_parse):
@@ -132,6 +139,9 @@ class ParseAndPresentTests(unittest.TestCase):
             self.assertIsNotNone(result.archive)
             self.assertTrue((result.archive.run_dir / "lecture.mp4").is_file())
             self.assertTrue((output / "lecture.json").is_file())
+            manifest = json.loads(result.archive.manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["output"]["signal"], str(output / "lecture.signal.json"))
+            self.assertEqual(manifest["output"]["signal_view"], str(output / "lecture.signal.md"))
 
     def test_failed_parse_leaves_the_recording_in_place(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

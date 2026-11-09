@@ -215,6 +215,16 @@ def parse_and_present(
                 "html": str(parse_result.html_path),
                 "markdown": str(parse_result.markdown_path),
                 "present": str(present_result.present_path),
+                **(
+                    {"signal": str(parse_result.signal_path)}
+                    if parse_result.signal_path is not None
+                    else {}
+                ),
+                **(
+                    {"signal_view": str(parse_result.signal_view_path)}
+                    if parse_result.signal_view_path is not None
+                    else {}
+                ),
             },
             extra={
                 "title": parse_result.document.title,

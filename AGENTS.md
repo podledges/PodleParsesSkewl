@@ -8,6 +8,7 @@ Standalone lecture review-reconstruction tool. Domain language lives in `CONTEXT
 python3 -m podleparsesskewl doctor
 python3 -m podleparsesskewl parse path/to/lecture.mp4
 python3 -m podleparsesskewl transcribe path/to/lecture.mp4 --local-files-root /absolute/model/cache
+python3 -m podleparsesskewl histogram path/to/lecture.json
 python3 -m podleparsesskewl modules sync
 python3 -m podleparsesskewl modules show 4704
 nix-shell --run 'python3 -m unittest discover -s tests -v'
@@ -22,7 +23,7 @@ CI (GitHub Actions) is the remote automated check machine. Do not treat CI green
 Canonical definitions live under `.agents/skills/<skill>/SKILL.md`. Harness entries in `.claude/skills/` and `.grok/skills/` are discovery pointers, never copies.
 
 - `/parse-skewl` runs this repo's parser on one local MP4.
-- `/present` writes teaching notes (`lecture.present.html`) from an existing `lecture.json`. Sibling of `/ezLectures`; it teaches, it does not replay Said verbatim.
+- `/present` writes teaching notes (`lecture.present.html`) from an existing `lecture.json`. Sibling of `/ezLectures`; it teaches, it does not replay Said verbatim. After the teaching pass it runs the Signal pass and writes `lecture.stills-text.json`, `lecture.grades.json`, `lecture.brief.md`, and `lecture.taught.md`.
 - `/parse-skewl-notes` runs parse, `/present`, and optional input archive.
 - `/ezLectures` renders a faithful aesthetic HTML view from an existing `lecture.json`.
 - The Pi package registers `/transcribe`, `pps_transcribe`, and `/skill:transcribe`; setup and absolute runtime/model environment variables are in `README.md`.
@@ -46,6 +47,7 @@ Windows launcher: `podleparsesskewl/gui.py`. Next-step issue plan and open capta
 - Core path is local. Do not add a required cloud API.
 - Do not treat "slide" as a second extracted object. The extracted visual is a Still.
 - v1 still detection uses `DEFAULT_CHANGE_RATIO = 0.15` so a text-heavy full-slide swap splits and a typical one-bullet progressive build stays merged. v2 may split a held build only when the added content is large enough and/or held long enough; those thresholds are not designed yet. See `podleparsesskewl/stills.py`.
+- Stage 1 timing-signal thresholds live in `podleparsesskewl/signal.py`. `pps histogram --check` is the contract test for `lecture.signal.json` and `lecture.grades.json`.
 - Nothing under `modules/` is ever committed to this repo; it is a clone of the private modules repo. Received course material (textbooks, slides, recordings, parsed lectures) is never committed or uploaded anywhere, including that private repo; it stays in each module's ignored `material/` and `lectures/`.
 - Module files go in that module's folder; private records that belong to no module go in `modules/_project/`; `docs/` is only for how things work.
 

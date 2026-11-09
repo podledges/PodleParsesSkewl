@@ -3,7 +3,12 @@ from __future__ import annotations
 import random
 import unittest
 
-from podleparsesskewl.stills import FrameSignature, segment_stills
+from podleparsesskewl.stills import (
+    FrameSignature,
+    StillInterval,
+    group_appearances,
+    segment_stills,
+)
 
 WIDTH = 160
 HEIGHT = 90
@@ -91,6 +96,60 @@ class StillSegmentationTests(unittest.TestCase):
         frames += [_with_bubble(one_bullet, t) for t in range(5, 10)]
         intervals = segment_stills(frames, duration_seconds=10.0)
         self.assertEqual(len(intervals), 1)
+
+
+class AppearanceGroupingTests(unittest.TestCase):
+    def test_return_to_a_prior_page_reuses_the_group(self) -> None:
+        page_a = _white_slide(seed=1, bullets=4)
+        page_b = _white_slide(seed=2, bullets=4)
+        frames = [_with_bubble(page_a, 0), _with_bubble(page_b, 5), _with_bubble(page_a, 10)]
+        intervals = [
+            StillInterval(0.0, 5.0, 0.0),
+            StillInterval(5.0, 10.0, 5.0),
+            StillInterval(10.0, 15.0, 10.0),
+        ]
+        self.assertEqual(group_appearances(frames, intervals), [1, 2, 1])
+
+    def test_one_bullet_build_stays_the_same_appearance(self) -> None:
+        title_only = _white_slide(seed=1, bullets=0)
+        one_bullet = _white_slide(seed=1, bullets=1)
+        frames = [_with_bubble(title_only, 0), _with_bubble(one_bullet, 5)]
+        intervals = [StillInterval(0.0, 5.0, 0.0), StillInterval(5.0, 10.0, 5.0)]
+        self.assertEqual(group_appearances(frames, intervals), [1, 1])
+
+    def test_three_distinct_pages(self) -> None:
+        frames = [
+            _frame(0.0, slide=20, webcam=20),
+            _frame(5.0, slide=200, webcam=200),
+            _frame(10.0, slide=80, webcam=80),
+        ]
+        intervals = [
+            StillInterval(0.0, 5.0, 0.0),
+            StillInterval(5.0, 10.0, 5.0),
+            StillInterval(10.0, 15.0, 10.0),
+        ]
+        self.assertEqual(group_appearances(frames, intervals), [1, 2, 3])
+
+    def test_representative_is_the_nearest_frame_earlier_on_a_tie(self) -> None:
+        frames = [
+            _frame(0.0, slide=20, webcam=20),
+            _frame(1.0, slide=20, webcam=20),
+            _frame(2.0, slide=200, webcam=200),
+        ]
+        tied = [
+            StillInterval(0.0, 1.0, 0.0),
+            StillInterval(1.0, 3.0, 1.5),
+        ]
+        self.assertEqual(group_appearances(frames, tied), [1, 1])
+        nearer_second = [
+            StillInterval(0.0, 1.0, 0.0),
+            StillInterval(1.0, 3.0, 1.6),
+        ]
+        self.assertEqual(group_appearances(frames, nearer_second), [1, 2])
+
+    def test_empty_frames_give_no_ids(self) -> None:
+        self.assertEqual(group_appearances([], [StillInterval(0.0, 1.0, 0.0)]), [])
+        self.assertEqual(group_appearances([_with_bubble(_white_slide(1, 0), 0)], []), [])
 
 
 def _white_slide(seed: int, bullets: int) -> bytearray:

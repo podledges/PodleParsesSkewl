@@ -488,3 +488,32 @@ class DoctorTests(unittest.TestCase):
             path.write_text('{"title": "x"}', encoding="utf-8")
             code = main(["render", str(path)])
         self.assertEqual(code, 2)
+
+    def test_parse_print_includes_signal_and_histogram_paths(self) -> None:
+        import contextlib
+        import io
+
+        from podleparsesskewl.pipeline import ParseResult
+
+        document = _render_fixture_document()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            stdout = io.StringIO()
+            result = ParseResult(
+                document=document,
+                document_path=folder / "lecture.json",
+                html_path=folder / "lecture.html",
+                markdown_path=folder / "lecture.md",
+                signal_path=folder / "lecture.signal.json",
+                signal_view_path=folder / "lecture.signal.md",
+            )
+            with mock.patch("podleparsesskewl.cli.parse_recording", return_value=result):
+                with mock.patch("podleparsesskewl.cli.resolve_output_dir", return_value=folder):
+                    with contextlib.redirect_stdout(stdout):
+                        code = main(["parse", str(folder / "lecture.mp4")])
+            self.assertEqual(code, 0)
+            text = stdout.getvalue()
+            self.assertIn("Signal    ", text)
+            self.assertIn("lecture.signal.json", text)
+            self.assertIn("Histogram ", text)
+            self.assertIn("lecture.signal.md", text)
