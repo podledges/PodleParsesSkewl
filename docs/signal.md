@@ -89,7 +89,7 @@ pps histogram <...> --write [--pause-seconds F] [--pass-through-seconds F] [--wi
 
 Resolves the Document like `present`. Loads `lecture.stills-text.json` from the Document folder when present. Default prints both histograms. `--check` compares a recomputation with `lecture.signal.json` (every field except `generated_at`) and validates grades when present; exit 1 on any difference or grade error. `--write` overwrites the two signal files. Without threshold flags, printing and `--write` reuse the thresholds stored in an existing `lecture.signal.json` (defaults otherwise); each explicit flag overrides its stored value. `--check` with `--write` or with threshold flags is a usage error. There is no `-o`; files always sit beside the Document.
 
-Grade errors fail `--check`. Warnings (printed, do not fail): `fluff_filtered` on a Still whose spoken time is at or below 30 s; a `prescore_zero` Still graded above 0; `signal_generated_at` older than the stored signal.
+Grade errors fail `--check`. Warnings (printed, do not fail): `fluff_filtered` on a Still whose spoken time is at or below 30 s; a `prescore_zero` Still graded above 0; `signal_generated_at` differs from the signal's `generated_at`.
 
 ## Grade schema
 
