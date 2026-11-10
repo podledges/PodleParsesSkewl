@@ -44,6 +44,14 @@ def inspect_environment() -> Environment:
     return Environment(ffmpeg=ffmpeg, ffprobe=ffprobe, transcriber=transcriber)
 
 
+def whisper_ctranslate2_available(env: Environment) -> bool:
+    """Whether this environment has the whisper-ctranslate2 CLI."""
+    status = getattr(env, "transcriber", None)
+    if status is None or getattr(status, "found", True):
+        return False
+    return getattr(status, "path", None) is not None
+
+
 FFMPEG_SETUP = """\
 Install ffmpeg, which includes ffprobe. This program does not download or install it.
 Debian / Ubuntu: sudo apt-get install ffmpeg

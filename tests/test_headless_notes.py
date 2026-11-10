@@ -18,7 +18,7 @@ from podleparsesskewl.cli import (
     quote_command,
 )
 from podleparsesskewl.config import AppConfig, find_recordings, list_recordings, load_config
-from podleparsesskewl.deps import FFMPEG_SETUP, TRANSCRIBER_SETUP
+from podleparsesskewl.deps import FFMPEG_SETUP, TRANSCRIBER_SETUP, inspect_environment
 from podleparsesskewl.document import Cue, LectureDocument, Section, SourceInfo, Still, Transcript
 from podleparsesskewl.media import Probe
 from podleparsesskewl.present import REVIEW_NAME, render_review
@@ -85,6 +85,26 @@ def _video_ready_no_engine() -> SimpleNamespace:
         ffprobe=found,
         can_transcribe_audio=False,
         can_parse_video=True,
+    )
+
+
+def _only_ctranslate2(binary: str) -> str | None:
+    if binary == "whisper-ctranslate2":
+        return "/bin/whisper-ctranslate2"
+    return None
+
+
+def _env_with_inspected_transcriber(which) -> SimpleNamespace:
+    with mock.patch.dict("sys.modules", {"faster_whisper": None, "whisper": None}):
+        with mock.patch("podleparsesskewl.deps.shutil.which", side_effect=which):
+            inspected = inspect_environment()
+    found = SimpleNamespace(found=True, path=Path("/usr/bin/ffprobe"))
+    return SimpleNamespace(
+        ffmpeg=found,
+        ffprobe=found,
+        can_transcribe_audio=inspected.can_transcribe_audio,
+        can_parse_video=True,
+        transcriber=inspected.transcriber,
     )
 
 
@@ -299,15 +319,13 @@ class NotesContractTests(unittest.TestCase):
         self.assertFalse(output.exists())
         err = stderr.getvalue()
         self.assertIn(FFMPEG_SETUP, err)
-        self.assertIn(TRANSCRIBER_SETUP, err)
-        self.assertIn("--whisper-model-path", err)
-        self.assertIn("LD_LIBRARY_PATH", err)
+        self.assertNotIn(TRANSCRIBER_SETUP, err)
         self.assertNotIn("The lecture directory is not accessible", err)
         self.assertIn("Retry:", err)
         self.assertIn("absent-lectures", err)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["error"], "preflight")
-        self.assertEqual(payload["missing"], ["ffmpeg", "ffprobe", "transcriber"])
+        self.assertEqual(payload["missing"], ["ffmpeg", "ffprobe"])
         self.assertIn("notes", payload["retry"])
         self.assertNotIn('"error"', err)
         self.assertNotIn('"missing"', err)
@@ -487,7 +505,90 @@ class NotesContractTests(unittest.TestCase):
         self.assertEqual(code, 1)
         run.assert_not_called()
         probed.assert_called_once()
+        err = stderr.getvalue()
+        self.assertIn(TRANSCRIBER_SETUP, err)
+        self.assertIn("--whisper-model-path", err)
+        self.assertIn("LD_LIBRARY_PATH", err)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["error"], "preflight")
+        self.assertEqual(payload["missing"], ["transcriber"])
+
+    def test_missing_recording_is_not_hidden_by_transcriber_setup(self) -> None:
+        env = _video_ready_no_engine()
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            missing = folder / "no-such-Week5.mp4"
+            directory = folder / "not-a-recording"
+            directory.mkdir()
+            for recording in (missing, directory):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        code = main(["notes", str(recording), "--no-archive"])
+                self.assertEqual(code, 2, stderr.getvalue())
+                err = stderr.getvalue()
+                self.assertIn("Recording not found", err)
+                self.assertNotIn(TRANSCRIBER_SETUP, err)
+                self.assertNotIn("preflight", err)
+                self.assertEqual(json.loads(stdout.getvalue())["error"], "failed")
+
+    def test_ctranslate2_model_path_is_not_blocked_as_a_missing_engine(self) -> None:
+        env = _env_with_inspected_transcriber(_only_ctranslate2)
+        probe = Probe(duration_seconds=4.0, width=16, height=9, has_audio=True, has_video=True)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "Week5-System.mp4"
+            recording.write_bytes(b"mp4")
+            model_path = folder / "snapshot"
+            model_path.mkdir()
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                with mock.patch("podleparsesskewl.cli.probe_recording", return_value=probe):
+                    with mock.patch(
+                        "podleparsesskewl.cli.parse_and_present",
+                        return_value=_notes_run(recording),
+                    ) as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main([
+                                "notes",
+                                str(recording),
+                                "--whisper-model-path",
+                                str(model_path),
+                                "--no-archive",
+                            ])
+        self.assertEqual(code, 0, stderr.getvalue())
+        run.assert_called_once()
+        self.assertEqual(run.call_args.kwargs["options"].transcription.model_path, model_path)
+        self.assertNotIn(TRANSCRIBER_SETUP, stderr.getvalue())
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["schema"], "podleparsesskewl.notes/v1")
+        self.assertNotIn("error", payload)
+
+    def test_model_path_without_an_engine_still_requires_a_transcriber(self) -> None:
+        env = _env_with_inspected_transcriber(lambda _binary: None)
+        probe = Probe(duration_seconds=4.0, width=16, height=9, has_audio=True, has_video=True)
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            recording = folder / "Week5-System.mp4"
+            recording.write_bytes(b"mp4")
+            model_path = folder / "snapshot"
+            model_path.mkdir()
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("podleparsesskewl.cli.inspect_environment", return_value=env):
+                with mock.patch("podleparsesskewl.cli.probe_recording", return_value=probe):
+                    with mock.patch("podleparsesskewl.cli.parse_and_present") as run:
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main([
+                                "notes",
+                                str(recording),
+                                "--whisper-model-path",
+                                str(model_path),
+                                "--no-archive",
+                            ])
+        self.assertEqual(code, 1)
+        run.assert_not_called()
         self.assertIn(TRANSCRIBER_SETUP, stderr.getvalue())
+        self.assertNotIn("was reported available", stderr.getvalue())
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["error"], "preflight")
         self.assertEqual(payload["missing"], ["transcriber"])

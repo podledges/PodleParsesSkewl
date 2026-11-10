@@ -28,6 +28,7 @@ from podleparsesskewl.deps import (
     Environment,
     format_doctor,
     inspect_environment,
+    whisper_ctranslate2_available,
 )
 from podleparsesskewl.errors import PpsError, writing
 from podleparsesskewl.media import probe_recording
@@ -526,7 +527,11 @@ def _cmd_notes(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         config = _config_from_args(args)
         recording = _resolve_recording(args)
-        missing = notes_preflight(recording=recording, sidecar=args.transcript)
+        missing = notes_preflight(
+            recording=recording,
+            sidecar=args.transcript,
+            model_path=args.whisper_model_path,
+        )
         if missing:
             _emit_preflight_failure(missing, argv)
             return 1
@@ -677,6 +682,7 @@ def notes_preflight(
     *,
     recording: Path | None = None,
     sidecar: Path | None = None,
+    model_path: Path | None = None,
 ) -> tuple[str, ...]:
     """Names of missing tools that block this notes run. Empty means parse may start."""
     environment = env if env is not None else inspect_environment()
@@ -685,23 +691,30 @@ def notes_preflight(
         missing.append("ffmpeg")
     if not environment.ffprobe.found:
         missing.append("ffprobe")
-    if not environment.can_transcribe_audio and _notes_need_installed_engine(
-        environment, recording, sidecar
-    ):
+    if _notes_missing_transcriber(environment, recording, sidecar, model_path):
         missing.append("transcriber")
     return tuple(missing)
 
 
-def _notes_need_installed_engine(
+def _notes_missing_transcriber(
     env: Environment,
     recording: Path | None,
     sidecar: Path | None,
+    model_path: Path | None,
 ) -> bool:
+    if env.can_transcribe_audio or _ctranslate2_with_model_path(env, model_path):
+        return False
+    if recording is None or not recording.is_file():
+        return False
     return installed_engine_required(
         recording,
         sidecar=sidecar,
         has_audio=_probed_has_audio(env, recording, sidecar),
     )
+
+
+def _ctranslate2_with_model_path(env: Environment, model_path: Path | None) -> bool:
+    return model_path is not None and whisper_ctranslate2_available(env)
 
 
 def _probed_has_audio(
