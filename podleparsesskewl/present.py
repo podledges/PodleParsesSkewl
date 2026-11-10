@@ -1,8 +1,9 @@
-"""Teaching Report: lecture.present.html derived from a Lecture Document.
+"""Teaching Report derived from a Lecture Document.
 
-This is the local-core renderer the CLI and GUI call. It compresses Said into
-teaching notes without inventing claims, applications, or diagrams. The
-`/present` agent skill may then tighten mental models in the same HTML file.
+Standalone present writes lecture.present.html. A notes run also writes
+lecture.review.html, the page to open. The `/present` skill tightens mental
+models in lecture.present.html, or in the teaching half of lecture.review.html
+when the run was pps notes. It does not invent claims, applications, or diagrams.
 """
 
 from __future__ import annotations

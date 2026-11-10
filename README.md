@@ -14,7 +14,7 @@ lecture.lecture/
   lecture.html           # plain program view
   lecture.md             # same pairing in Markdown
   transcript.md          # faithful timestamped paragraphs, including audio-only input
-  lecture.present.html   # teaching notes alone (pps present)
+  lecture.present.html   # teaching notes alone (pps present). pps notes writes this file too; open lecture.review.html
   lecture.review.html    # teaching view and faithful Still-plus-Said view (pps notes)
   stills/
     still-001.png
@@ -157,7 +157,7 @@ Audio-only media, including attached cover artwork, writes `lecture.json` with e
 
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
-End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is the headless one-shot: it runs the doctor checks, parses, and writes `lecture.review.html`, one page with the teaching view and the faithful Still-plus-Said view. Human text goes to stderr. Stdout is one JSON object whose `open` field is that page. Archive is off unless `--archive` or `archive_after_notes` is set. `--no-archive` leaves the Recording in place even then. `notes` takes a Recording path, `--latest`, `--find` with `--in`, or `--pick` when a person asks for a file picker. `--pick` is an explicit opt-in. A failed or ambiguous search lists paths and stops. `parse --pick` is the same picker and still writes only the plain view. `notes --pick` writes `lecture.review.html`, the same combined page as every other notes selection. The GUI Parse button is `parse`; Parse + Notes is `notes`.
+End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is the headless one-shot. Before parse it requires ffmpeg and ffprobe, and a transcription engine only when this run will transcribe Said. A sidecar or `--transcript`, a Recording with no audio track, and `whisper-ctranslate2` with `--whisper-model-path` are not missing-engine failures. A missing Recording is not found, not a missing engine. An explicit path and `--find` with `--in` are not blocked by an unreachable lecture directory. It then parses and writes `lecture.review.html`, one page with the teaching view and the faithful Still-plus-Said view. Human text goes to stderr. On success, stdout is one JSON object whose `open` field is the absolute path of that page. Archive is off unless `--archive` or `archive_after_notes` is set. `--no-archive` leaves the Recording in place even then. `notes` takes a Recording path, `--latest`, `--find` with `--in`, or `--pick` when a person asks for a file picker. `--pick` is an explicit opt-in. A failed or ambiguous search lists paths and stops. `parse --pick` is the same picker and still writes only the plain view. `notes --pick` writes `lecture.review.html`, the same combined page as every other notes selection. The GUI Parse button is `parse`; Parse + Notes is `notes`.
 
 ### Pi package
 
@@ -226,7 +226,7 @@ C:\Users\ayden\Documents\SCHOOL\NUS Y3S1
 
 Quote it. The path contains spaces. Under WSL the same folder is `/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1`.
 
-That folder holds one subfolder per taught course, named with a leading number such as `5 - CG2027`, and a course keeps its Recordings inside its own folder, for example `5 - CG2027\recordings\Week5-System.mp4`. `pps list`, `pps notes --latest`, and `pps notes --find` all search that folder recursively, including course subfolders. `--find` proceeds only when exactly one Recording matches. Zero matches, or more than one, exits non-zero and lists the full paths it found. `--latest` uses the newest Recording under the lecture directory, and still refuses when that directory is not accessible.
+That folder holds one subfolder per taught course, named with a leading number such as `5 - CG2027`, and a course keeps its Recordings inside its own folder, for example `5 - CG2027\recordings\Week5-System.mp4`. `pps list`, `--latest`, and `--find` search that folder recursively, including course subfolders. `--latest` and `--find` do that on both `parse` and `notes`. `--find` proceeds only when exactly one Recording matches. Zero matches, or more than one, exits non-zero and lists the full paths it found. `--latest` uses the newest Recording under the lecture directory, and still refuses when that directory is not accessible.
 
 On a machine that cannot see that folder:
 
@@ -248,7 +248,7 @@ For commands that use lecture configuration (`transcribe` does not), explicit se
 4. A discovered `podleparsesskewl.toml` (working directory, then `~/.config/podleparsesskewl/`)
 5. The default `C:\Users\ayden\Documents\SCHOOL\NUS Y3S1`
 
-Default output parent and archive parent use the same explicit-beats-ambient order, via `--default-output-dir` / `output_dir` / `PODLEPARSESSKEWL_OUTPUT_DIR` and `--archive-dir` / `archive_dir` / `PODLEPARSESSKEWL_ARCHIVE_DIR`. An explicit `-o/--output` is still this run's Lecture folder. Archive never overwrites an existing run folder; each success gets a new timestamped directory and `archive-manifest.json`. Generated Lecture files are never moved. If archive fails after notes were written, the teaching Report stays in the output folder and the error names any input that already moved.
+Default output parent and archive parent use the same explicit-beats-ambient order, via `--default-output-dir` / `output_dir` / `PODLEPARSESSKEWL_OUTPUT_DIR` and `--archive-dir` / `archive_dir` / `PODLEPARSESSKEWL_ARCHIVE_DIR`. An explicit `-o/--output` is still this run's Lecture folder. Archive never overwrites an existing run folder; each success gets a new timestamped directory and `archive-manifest.json`. Generated Lecture files are never moved. If archive fails after notes were written, `lecture.review.html` stays in the output folder and the error names any input that already moved.
 
 `pps doctor` prints the resolved path and which of these it came from.
 

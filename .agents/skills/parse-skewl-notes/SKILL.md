@@ -13,7 +13,7 @@ Parse one local Recording headlessly. `pps notes` writes `lecture.review.html`, 
 
 ## Completion
 
-Done when `pps notes` has exited 0 and stdout is one JSON object whose `open` field is `lecture.review.html`. Report that path. The Recording stays where it was unless the JSON `archive` field is set. On failure, the Recording stays at its original path unless the command itself printed a partial-archive error. Pass `--pick` only when the person asked for a file picker. Do not prompt.
+Done when `pps notes` has exited 0 and stdout is one JSON object whose `open` field is the absolute path of `lecture.review.html`. Report that path. The Recording stays where it was unless the JSON `archive` field is set. On failure, the Recording stays at its original path unless the command itself printed a partial-archive error. Pass `--pick` only when the person asked for a file picker. Do not prompt.
 
 ## Steps
 

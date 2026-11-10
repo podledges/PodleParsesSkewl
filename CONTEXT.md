@@ -33,7 +33,7 @@ The structured result of one Lecture: Stills, Transcript, and the links between 
 _Avoid_: report, export, output (those are views or folders)
 
 **Report**:
-A human-readable view of a Document. The program's plain HTML/Markdown is one Report. `/ezLectures` is the faithful said+shown view. `/present` is the teaching view (`lecture.present.html`).
+A human-readable view of a Document. The program's plain HTML/Markdown is one Report. `/ezLectures` is a standalone faithful said+shown view. `/present` is the standalone teaching view (`lecture.present.html`). `pps notes` writes both views together in `lecture.review.html`.
 _Avoid_: Document (the Document is the source; a Report is a view). Do not use "notes" as a domain object name.
 
 **Module**:

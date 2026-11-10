@@ -185,11 +185,12 @@ def parse_and_present(
     archive: bool | None = None,
     archive_dir: Path | None = None,
 ) -> NotesRunResult:
-    """Parse one Recording, write teaching notes, then optionally archive inputs.
+    """Parse one Recording, write both views, then optionally archive inputs.
 
-    Archive runs only after notes are written. A failed parse or present leaves
-    the Recording where it was. A failed archive leaves the notes in place and
-    raises, naming any files that did move.
+    The page to open is lecture.review.html. Archive runs only after that page
+    exists. A failed parse or present leaves the Recording where it was. A failed
+    archive leaves the written pages in place and raises, naming any files that
+    did move.
     """
     cfg = config if config is not None else load_config()
     output_dir = resolve_output_dir(recording, output, cfg)
