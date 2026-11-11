@@ -14,6 +14,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -311,6 +312,21 @@ class GitModulesTests(unittest.TestCase):
         self.assertEqual(git(self.a, "status", "--porcelain"), "")
         self.assertEqual(git(self.a, "stash", "list"), "")
 
+    def test_local_ignore_warning_does_not_hide_a_real_pull_failure(self):
+        (self.b / "_project" / "notes.md").write_text("B note\n")
+        m.git_sync(self.b)
+        hook = self.a / ".git" / "hooks" / "pre-rebase"
+        hook.write_text("#!/bin/sh\necho refusing to rebase >&2\nexit 1\n")
+        hook.chmod(0o755)
+        unreadable = self.base / "xdg" / "git"
+        unreadable.mkdir(parents=True)
+        unreadable.chmod(0)
+        self.addCleanup(unreadable.chmod, 0o755)
+        (self.a / self.tree_relative).write_text("A edit\n")
+        with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(unreadable.parent)}):
+            with self.assertRaisesRegex(PpsError, "(?s)^pull failed: .*unable to access .*refus"):
+                m.git_sync(self.a)
+
     def test_unreachable_remote_is_offline_not_a_pull_error(self):
         git(self.a, "remote", "set-url", "origin", "https://remote.invalid/private.git")
         result = m.git_sync(self.a)
@@ -329,9 +345,35 @@ class GitModulesTests(unittest.TestCase):
         for message in ("error: The following untracked working tree files would be overwritten by merge:\n\tnotes.md",
                         "fatal: detected dubious ownership in repository at '/x'",
                         "fatal: Not possible to fast-forward, aborting.",
-                        "error: cannot pull with rebase: You have unstaged changes."):
+                        "error: cannot pull with rebase: You have unstaged changes.",
+                        "git@github.com: Permission denied (publickey).\n"
+                        "fatal: Could not read from remote repository.",
+                        "ERROR: Repository not found.\nfatal: Could not read from remote repository.",
+                        "remote: Repository not found.\n"
+                        "fatal: repository 'https://github.com/x.git/' not found",
+                        "remote: Invalid username or token.\n"
+                        "fatal: Authentication failed for 'https://github.com/x.git/'",
+                        "fatal: unable to access 'https://github.com/x.git/': "
+                        "The requested URL returned error: 401",
+                        "fatal: unable to access 'https://github.com/x.git/': "
+                        "The requested URL returned error: 403",
+                        "warning: unable to access '/home/u/.config/git/ignore': Permission denied\n"
+                        "refusing to rebase\nerror: The pre-rebase hook refused to rebase."):
             with self.subTest(message=message):
                 self.assertFalse(m._is_network_failure(message))
+
+    def test_ssh_access_refusal_exits_2_not_offline(self):
+        for remote_says in ("git@github.com: Permission denied (publickey).",
+                            "ERROR: Repository not found."):
+            with self.subTest(remote_says=remote_says):
+                ssh = self.base / "fake-ssh"
+                ssh.write_text(f"#!/bin/sh\necho '{remote_says}' >&2\nexit 255\n")
+                ssh.chmod(0o755)
+                git(self.a, "config", "core.sshCommand", str(ssh))
+                git(self.a, "remote", "set-url", "origin", "git@github.com:podledges/PodleModules.git")
+                with self.assertRaisesRegex(PpsError, "^pull failed: " + re.escape(remote_says)):
+                    m.git_sync(self.a)
+                self.assertEqual(self.cli("sync")[0], 2)
 
     def test_offline_still_commits_and_next_sync_pushes(self):
         git(self.a, "remote", "set-url", "origin", str(self.base / "absent.git"))

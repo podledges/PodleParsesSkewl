@@ -419,15 +419,27 @@ NETWORK_FAILURE_PATTERNS = (
     "connection refused",
     "connection timed out",
     "timed out",
-    "unable to access",
+    "fatal: unable to access",
     "network is unreachable",
     "temporary failure in name resolution",
     "failed to connect",
 )
 
+# The remote answered but refused this machine (missing key, revoked token, renamed
+# repo). git still ends these with a network-looking line, yet they need a manual fix.
+ACCESS_FAILURE_PATTERNS = (
+    "permission denied (publickey",
+    "repository not found",
+    "authentication failed",
+    "returned error: 401",
+    "returned error: 403",
+)
+
 
 def _is_network_failure(message: str) -> bool:
     lowered = message.lower()
+    if any(pattern in lowered for pattern in ACCESS_FAILURE_PATTERNS):
+        return False
     return any(pattern in lowered for pattern in NETWORK_FAILURE_PATTERNS)
 
 
