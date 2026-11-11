@@ -14,6 +14,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -264,15 +265,115 @@ class GitModulesTests(unittest.TestCase):
         git(self.b, "rebase", "--abort")
         self.assertEqual((self.b / self.tree_relative).read_text(), "B version\n")
 
-    def test_autostash_conflict_even_when_git_pull_returns_zero(self):
-        (self.b / self.tree_relative).write_text("dirty B version\n")
+    def test_same_line_edit_without_sync_is_a_rebase_conflict_never_a_stash(self):
+        (self.b / self.tree_relative).write_text("B version\n")
         (self.a / self.tree_relative).write_text("A version\n")
-        m.git_sync(self.a)
-        result = m.git_sync(self.b)
+        self.assertEqual(m.git_sync(self.b).exit_code, 0)
+        result = m.git_sync(self.a)
         self.assertEqual(result.exit_code, 1)
-        self.assertIn(str(self.tree_relative), result.conflicts)
-        self.assertIn("dirty B version", (self.b / self.tree_relative).read_text())
-        self.assertTrue(git(self.b, "stash", "list"))
+        self.assertEqual(result.conflicts, (str(self.tree_relative),))
+        self.assertEqual(git(self.a, "stash", "list"), "")
+        self.assertTrue(m._in_rebase(self.a))
+        self.assertIn("A version", (self.a / self.tree_relative).read_text())
+        (self.a / self.tree_relative).write_text("A version\n")
+        git(self.a, "add", str(self.tree_relative))
+        subprocess.run(["git", "-C", str(self.a), "rebase", "--continue"], check=True,
+                       capture_output=True, env={**os.environ, "GIT_EDITOR": "true"})
+        self.assertIn("pushed 1", m.git_sync(self.a).summary)
+        self.assertEqual((self.b / self.tree_relative).read_text(), "B version\n")
+        self.assertEqual(m.git_sync(self.b).summary, "Modules   pulled 1, pushed 0")
+        self.assertEqual((self.b / self.tree_relative).read_text(), "A version\n")
+
+    def test_pulled_manifest_change_keeps_table_fresh_and_history_fast_forward(self):
+        m.add_alias(self.b, "EE4704", "Img Analysis")
+        m.git_sync(self.b)
+        (self.a / "_project" / "notes.md").write_text("local note\n")
+        pushed_head = git(self.remote, "rev-parse", "main")
+        result = m.git_sync(self.a)
+        self.assertEqual((result.exit_code, result.warnings), (0, ()))
+        self.assertEqual(m.check(self.a), [])
+        self.assertEqual(git(self.a, "status", "--porcelain"), "")
+        self.assertEqual(git(self.remote, "rev-parse", "main"), git(self.a, "rev-parse", "HEAD"))
+        git(self.a, "merge-base", "--is-ancestor", pushed_head, "HEAD")
+
+    def test_non_network_pull_failure_exits_2_and_keeps_the_edit_committed(self):
+        (self.b / "_project" / "notes.md").write_text("B note\n")
+        m.git_sync(self.b)
+        hook = self.a / ".git" / "hooks" / "pre-rebase"
+        hook.write_text("#!/bin/sh\necho refusing to rebase >&2\nexit 1\n")
+        hook.chmod(0o755)
+        (self.a / self.tree_relative).write_text("A edit\n")
+        remote_head = git(self.remote, "rev-parse", "main")
+        with self.assertRaisesRegex(PpsError, "^pull failed: .*refus"):
+            m.git_sync(self.a)
+        self.assertEqual(self.cli("sync")[0], 2)
+        self.assertEqual(git(self.remote, "rev-parse", "main"), remote_head)
+        self.assertIn("study:", git(self.a, "log", "-1", "--format=%s"))
+        self.assertEqual(git(self.a, "status", "--porcelain"), "")
+        self.assertEqual(git(self.a, "stash", "list"), "")
+
+    def test_local_ignore_warning_does_not_hide_a_real_pull_failure(self):
+        (self.b / "_project" / "notes.md").write_text("B note\n")
+        m.git_sync(self.b)
+        hook = self.a / ".git" / "hooks" / "pre-rebase"
+        hook.write_text("#!/bin/sh\necho refusing to rebase >&2\nexit 1\n")
+        hook.chmod(0o755)
+        unreadable = self.base / "xdg" / "git"
+        unreadable.mkdir(parents=True)
+        unreadable.chmod(0)
+        self.addCleanup(unreadable.chmod, 0o755)
+        (self.a / self.tree_relative).write_text("A edit\n")
+        with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(unreadable.parent)}):
+            with self.assertRaisesRegex(PpsError, "(?s)^pull failed: .*unable to access .*refus"):
+                m.git_sync(self.a)
+
+    def test_unreachable_remote_is_offline_not_a_pull_error(self):
+        git(self.a, "remote", "set-url", "origin", "https://remote.invalid/private.git")
+        result = m.git_sync(self.a)
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("pull failed (offline, using local copy):", result.warnings[0])
+
+    def test_network_failure_classification(self):
+        for message in ("fatal: Could not resolve host: github.com",
+                        "fatal: Could not read from remote repository.",
+                        "ssh: connect to host github.com port 22: Connection refused",
+                        "ssh: connect to host github.com port 22: Connection timed out",
+                        "fatal: unable to access 'https://github.com/x.git/': Failed to connect",
+                        "git: Command '['git', 'pull']' timed out after 120 seconds"):
+            with self.subTest(message=message):
+                self.assertTrue(m._is_network_failure(message))
+        for message in ("error: The following untracked working tree files would be overwritten by merge:\n\tnotes.md",
+                        "fatal: detected dubious ownership in repository at '/x'",
+                        "fatal: Not possible to fast-forward, aborting.",
+                        "error: cannot pull with rebase: You have unstaged changes.",
+                        "git@github.com: Permission denied (publickey).\n"
+                        "fatal: Could not read from remote repository.",
+                        "ERROR: Repository not found.\nfatal: Could not read from remote repository.",
+                        "remote: Repository not found.\n"
+                        "fatal: repository 'https://github.com/x.git/' not found",
+                        "remote: Invalid username or token.\n"
+                        "fatal: Authentication failed for 'https://github.com/x.git/'",
+                        "fatal: unable to access 'https://github.com/x.git/': "
+                        "The requested URL returned error: 401",
+                        "fatal: unable to access 'https://github.com/x.git/': "
+                        "The requested URL returned error: 403",
+                        "warning: unable to access '/home/u/.config/git/ignore': Permission denied\n"
+                        "refusing to rebase\nerror: The pre-rebase hook refused to rebase."):
+            with self.subTest(message=message):
+                self.assertFalse(m._is_network_failure(message))
+
+    def test_ssh_access_refusal_exits_2_not_offline(self):
+        for remote_says in ("git@github.com: Permission denied (publickey).",
+                            "ERROR: Repository not found."):
+            with self.subTest(remote_says=remote_says):
+                ssh = self.base / "fake-ssh"
+                ssh.write_text(f"#!/bin/sh\necho '{remote_says}' >&2\nexit 255\n")
+                ssh.chmod(0o755)
+                git(self.a, "config", "core.sshCommand", str(ssh))
+                git(self.a, "remote", "set-url", "origin", "git@github.com:podledges/PodleModules.git")
+                with self.assertRaisesRegex(PpsError, "^pull failed: " + re.escape(remote_says)):
+                    m.git_sync(self.a)
+                self.assertEqual(self.cli("sync")[0], 2)
 
     def test_offline_still_commits_and_next_sync_pushes(self):
         git(self.a, "remote", "set-url", "origin", str(self.base / "absent.git"))
