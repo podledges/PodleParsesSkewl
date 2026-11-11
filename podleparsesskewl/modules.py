@@ -410,6 +410,55 @@ def git_init(root: Path, url: str) -> None:
         raise PpsError("\n".join(problems))
 
 
+# Substrings of git's stderr that mean the remote could not be reached. Anything else
+# that makes a pull fail (overwritten untracked files, a refused rebase, dubious
+# ownership) needs a manual fix and must not be reported as "offline".
+NETWORK_FAILURE_PATTERNS = (
+    "could not resolve host",
+    "could not read from remote repository",
+    "connection refused",
+    "connection timed out",
+    "timed out",
+    "unable to access",
+    "network is unreachable",
+    "temporary failure in name resolution",
+    "failed to connect",
+)
+
+
+def _is_network_failure(message: str) -> bool:
+    lowered = message.lower()
+    return any(pattern in lowered for pattern in NETWORK_FAILURE_PATTERNS)
+
+
+def _commit_local(root: Path, hostname: str | None, now: datetime | None, suffix: str = "") -> bool:
+    """Stage and commit every local change; True when a commit was made."""
+    opted_in = _received_tracked(root)
+    if not _git(root, "status", "--porcelain").stdout:
+        return False
+    _git(root, "add", "-A")
+    # Nested ignore overrides can defeat root rules. Only an explicit
+    # `git add -f` may track received material, never the default staging.
+    unintended = sorted(_received_tracked(root) - opted_in)
+    if unintended:
+        _git(root, "reset", "-q", "--", *unintended)
+        raise PpsError("received material was staged by default and has been unstaged; "
+                       "fix the ignore override or opt in with git add -f:\n" + "\n".join(unintended))
+    if not _git(root, "diff", "--cached", "--quiet", required=False).returncode:
+        return False
+    stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    _git(root, "commit", "-m", f"study: {stamp} {hostname or socket.gethostname()}{suffix}")
+    return True
+
+
+def _regenerate(root: Path) -> None:
+    _ensure_ignores(root)
+    write_table(root, load_modules(root))
+    problems = check(root)
+    if problems:
+        raise PpsError("\n".join(problems))
+
+
 def git_sync(root: Path, hostname: str | None = None, now: datetime | None = None) -> SyncResult:
     require_clone(root)
     conflicts = _conflicts(root)
@@ -417,40 +466,36 @@ def git_sync(root: Path, hostname: str | None = None, now: datetime | None = Non
         return SyncResult("Modules   conflict; resolve files and continue/abort the rebase before syncing",
                           conflicts=conflicts or ("rebase in progress",))
     warnings: list[str] = []
+    # Commit first, so an edit that collides with the remote is an ordinary rebase
+    # conflict on a real commit and never sits only in a stash.
+    _regenerate(root)
+    _commit_local(root, hostname, now)
     before = _git(root, "rev-parse", "--verify", "HEAD", required=False).stdout.strip()
     try:
-        pull = _git(root, "pull", "--rebase", "--autostash", "--quiet", required=False)
+        # No --autostash: everything trackable is committed, and a tree that is still
+        # dirty here (a failed pull must not hide it) makes git refuse and exit 2 below.
+        pull = _git(root, "pull", "--rebase", "--quiet", required=False)
         pull_error = pull.stderr.strip() if pull.returncode else ""
     except PpsError as exc:
         pull_error = str(exc)
     conflicts = _conflicts(root)
     if conflicts or _in_rebase(root):
-        return SyncResult("Modules   conflict; resolve files, then continue the rebase (or stage autostash resolutions)",
+        return SyncResult("Modules   conflict; resolve files, then continue the rebase",
                           conflicts=conflicts or ("rebase in progress",))
     first_push = bool(pull_error) and _upstream_missing(root)
     pulled = 0
     if pull_error and not first_push:
+        if not _is_network_failure(pull_error):
+            raise PpsError(f"pull failed: {pull_error}")
         warnings.append(f"pull failed (offline, using local copy): {pull_error}")
     elif not pull_error:
         pulled = _count(root, f"{before}..@{{upstream}}" if before else "@{upstream}")
-    _ensure_ignores(root)
-    write_table(root, load_modules(root))
-    problems = check(root)
-    if problems:
-        raise PpsError("\n".join(problems))
-    opted_in = _received_tracked(root)
-    if _git(root, "status", "--porcelain").stdout:
-        _git(root, "add", "-A")
-        # Nested ignore overrides can defeat root rules. Only an explicit
-        # `git add -f` may track received material, never the default staging.
-        unintended = sorted(_received_tracked(root) - opted_in)
-        if unintended:
-            _git(root, "reset", "-q", "--", *unintended)
-            raise PpsError("received material was staged by default and has been unstaged; "
-                           "fix the ignore override or opt in with git add -f:\n" + "\n".join(unintended))
-        if _git(root, "diff", "--cached", "--quiet", required=False).returncode:
-            stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
-            _git(root, "commit", "-m", f"study: {stamp} {hostname or socket.gethostname()}")
+    if not pull_error:
+        # A pull can change the manifests, so the table may render differently. A second
+        # commit, never an amend: HEAD may be a commit already pushed, and rewriting it
+        # would diverge the other PC.
+        _regenerate(root)
+        _commit_local(root, hostname, now, " (MODULES.md)")
     has_head = _git(root, "rev-parse", "--verify", "HEAD", required=False).returncode == 0
     pushed = _count(root, "HEAD") if first_push else _count(root, "@{upstream}..HEAD")
     push_args = ("push", "--quiet", "-u", "origin", "HEAD") if first_push else ("push", "--quiet")

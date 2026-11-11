@@ -92,22 +92,21 @@ There is no daily command to run by hand. `/module` runs `pps modules sync` at t
 `pps modules sync` does this, in order:
 
 1. Refuse, and point at `init`, when `modules/.git` is missing. Refuse, and name the files, when unmerged files or a rebase are already in progress. It does not pull in that state.
-2. `git -C modules pull --rebase --autostash`. Any pull failure other than a conflict, network or not, is a warning, not an error: `pull failed (offline, using local copy): ` followed by git's own message. Sync then continues with the local copy: it regenerates, commits, and tries to push. Read git's message in that warning, because a non-network failure, such as untracked files that would be overwritten, needs a manual fix before the next sync. A missing upstream on the first push is not that warning; the push publishes the branch.
-3. When the pull leaves unmerged files or a rebase in progress, print those files and exit 1. See Conflicts.
-4. Regenerate `modules/MODULES.md` from the manifests.
-5. When `git -C modules status --porcelain` is non-empty: `git -C modules add -A` and commit as `study: <YYYY-MM-DDTHH:MMZ> <hostname>`. The tool does not set a git author; the machine's git config applies.
-6. `git -C modules push`. The first push of a new clone sets the upstream. A push failure is a warning (`push failed; commits kept locally for next sync`). The commit stays local and the next sync pushes it.
-7. Print one line: `Modules   up to date`, `Modules   pulled 2, pushed 1`, or, when a warning was printed, `Modules   local copy ready; sync incomplete`.
+2. Regenerate `modules/MODULES.md` from the manifests.
+3. When `git -C modules status --porcelain` is non-empty: `git -C modules add -A` and commit as `study: <YYYY-MM-DDTHH:MMZ> <hostname>`. The tool does not set a git author; the machine's git config applies. Local edits are committed before anything is pulled, so an edit is never held only in a stash.
+4. `git -C modules pull --rebase`. When the pull leaves unmerged files or a rebase in progress, print those files and exit 1. See Conflicts.
+5. A pull that fails because the remote cannot be reached (host not resolved, connection refused or timed out, remote unreadable) is a warning, not an error: `pull failed (offline, using local copy): ` followed by git's own message. Sync then continues with the local commit and tries to push. Any other pull failure, such as a refused rebase or a dubious-ownership refusal, needs a manual fix: sync prints `pull failed: ` followed by git's own message and exits 2 without pushing. The local commit from step 3 is kept. A missing upstream on the first push is neither: the push publishes the branch.
+6. After a successful pull, regenerate `MODULES.md` again. When the pulled manifests change what it renders, that is a second commit (`study: <stamp> <hostname> (MODULES.md)`), never an amend: the head may be a commit that is already pushed, and rewriting it would diverge the other PC.
+7. `git -C modules push`. The first push of a new clone sets the upstream. A push failure is a warning (`push failed; commits kept locally for next sync`). The commit stays local and the next sync pushes it.
+8. Print one line: `Modules   up to date`, `Modules   pulled 2, pushed 1`, or, when a warning was printed, `Modules   local copy ready; sync incomplete`.
 
 The command is safe to run at any time. It is a no-op when the clone is clean and already matches the remote. Do not `git push` by hand inside `modules/` when `sync` is available. `show` does not sync by itself.
 
 ### Conflicts
 
-`sync` exits 1 and lists the conflicted files in both of these cases. Nothing is lost in either one.
+`sync` exits 1 and lists the conflicted files when the pull stops with conflict markers. Nothing is lost: the pull is replaying a local commit, which stays in the rebase. Resolve hand-edited files (Markdown or small JSON) and `git -C modules add` them. For `MODULES.md`, do not hand-merge a generated table: take either side (`git -C modules checkout --theirs -- MODULES.md` or `--ours`) and `git -C modules add` it. The next sync regenerates the table from the manifests. Then run `GIT_EDITOR=true git -C modules rebase --continue`, so no commit-message editor opens, and run `pps modules sync` again. `git -C modules rebase --abort` restores the local commit if the edit should be redone instead.
 
-A rebase conflict means the pull is replaying a local commit and stops with conflict markers. Resolve hand-edited files (Markdown or small JSON) and `git -C modules add` them. For `MODULES.md`, do not hand-merge a generated table: take either side (`git -C modules checkout --theirs -- MODULES.md` or `--ours`) and `git -C modules add` it. The next sync regenerates the table from the manifests. Then run `GIT_EDITOR=true git -C modules rebase --continue`, so no commit-message editor opens, and run `pps modules sync` again. The local commit stays in the rebase until that continue. `git -C modules rebase --abort` restores it if the edit should be redone instead.
-
-An autostash re-apply conflict means the rebase finished and re-applying the uncommitted edit conflicted. There is no rebase to continue. The edit is in the working tree and still in the stash. Resolve the markers in the listed files; for `MODULES.md`, do not hand-merge it either: take either side (`git -C modules checkout --ours -- MODULES.md` or `--theirs`) and the next sync regenerates the table from the manifests. `git -C modules add` the files, then `git -C modules stash drop`, and run `pps modules sync` again. Dropping the stash removes only that saved copy, after the resolved files are in the working tree. The next sync commits those files.
+Because sync commits before it pulls, an edit that collides with the remote is always this rebase conflict. It is never left only in a stash, so there is no `stash drop` step.
 
 A hand-edited file conflicts when the same lines were changed on both PCs with no sync in between. `MODULES.md` can also conflict when both PCs have committed a regenerated table, even if they changed different modules, because the sorted rows sit next to each other.
 
@@ -247,7 +246,7 @@ Override order, the same pattern as the lecture directory: `--modules-dir`, an e
 | Command | Does | Exit |
 | --- | --- | --- |
 | `pps modules init <url>` | Clone `<url>` into `modules/` when absent; verify the remote and the layout; print the doctor Modules block. No-op when `modules/` is already that clone. | 0. 2 when `modules/` exists and is not a clone of that remote. |
-| `pps modules sync` | Pull with rebase and autostash, regenerate `MODULES.md`, commit when dirty, push. One summary line. | 0. 1 on a rebase conflict or an autostash re-apply conflict (the line names the files). Pull failures other than a conflict, and push failures, are warnings. |
+| `pps modules sync` | Regenerate `MODULES.md`, commit when dirty, pull with rebase, push. One summary line. | 0. 1 on a rebase conflict (the line names the files). 2 on a pull failure that is not a conflict or a network failure. Network pull failures and push failures are warnings. |
 | `pps modules list [--json]` | Table of code, title, folder, status, alias count, and tree checkbox counts (done/total). | 0 |
 | `pps modules resolve <mention...> [--json]` | Resolve as below. JSON, or one human line without `--json`. | 0 resolved. 3 for suggest, ambiguous, or unknown. 2 on error. |
 | `pps modules show <mention...>` | Resolve, then print the folder path and `knowledge-tree.md`. | 0. 3 when unresolved. |
