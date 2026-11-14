@@ -14,7 +14,8 @@ lecture.lecture/
   lecture.html           # plain program view
   lecture.md             # same pairing in Markdown
   transcript.md          # faithful timestamped paragraphs, including audio-only input
-  lecture.present.html   # teaching notes (pps present / Parse + Notes)
+  lecture.present.html   # teaching notes alone (pps present). pps notes writes this file too; open lecture.review.html
+  lecture.review.html    # teaching view and faithful Still-plus-Said view (pps notes)
   stills/
     still-001.png
     still-002.png
@@ -136,8 +137,14 @@ python3 -m podleparsesskewl render ./out/lecture/lecture.json -o ./elsewhere
 # write teaching notes from an existing Document
 python3 -m podleparsesskewl present ./out/lecture/lecture.json
 
-# parse, write lecture.present.html, then move the input into a unique archive folder
-python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive-dir ./archive
+# one headless run: both views in lecture.review.html, archive off unless asked
+python3 -m podleparsesskewl notes path/to/lecture.mp4
+
+# look for a name in a folder. The search is recursive. Exactly one match proceeds.
+python3 -m podleparsesskewl notes --find Week5 --in "C:\Users\ayden\Documents\SCHOOL\NUS Y3S1"
+
+# opt in to moving the Recording into a unique archive folder after success
+python3 -m podleparsesskewl notes path/to/lecture.mp4 --archive --archive-dir ./archive
 ```
 
 `transcribe` is the explicit-local-file long-job interface, including MP3 and audio-only tracks. It does not use lecture discovery or configuration files. Without `-o`, output is `<stem>.lecture` beside the input. `--jsonl-progress` emits checking/processing/validating/done phases, not percentages, before the final JSON result.
@@ -150,7 +157,7 @@ Audio-only media, including attached cover artwork, writes `lecture.json` with e
 
 `render -o` copies `lecture.json` and every referenced Still image into the target folder, so the relative `stills/...` links in the rendered HTML keep resolving. Without `-o` the views are rebuilt beside the Document and the canonical `lecture.json` is left untouched.
 
-End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is parse + present, then a move of the Recording into a unique archive folder. Use `--no-archive` to leave the input in place. The GUI Parse button is `parse`; Parse + Notes is `notes`.
+End-to-end: `parse` writes `lecture.json` (canonical) and `lecture.html` (plain view) in one command. `present` writes `lecture.present.html` from that Document. `notes` is the headless one-shot. Before parse it requires ffmpeg and ffprobe, and a transcription engine only when this run will transcribe Said. A sidecar or `--transcript`, a Recording with no audio track, and `whisper-ctranslate2` with `--whisper-model-path` are not missing-engine failures. A missing Recording is not found, not a missing engine. An explicit path and `--find` with `--in` are not blocked by an unreachable lecture directory. It then parses and writes `lecture.review.html`, one page with the teaching view and the faithful Still-plus-Said view. Human text goes to stderr. On success, stdout is one JSON object whose `open` field is the absolute path of that page. Archive is off unless `--archive` or `archive_after_notes` is set. `--no-archive` leaves the Recording in place even then. `notes` takes a Recording path, `--latest`, `--find` with `--in`, or `--pick` when a person asks for a file picker. `--pick` is an explicit opt-in. A failed or ambiguous search lists paths and stops. `parse --pick` is the same picker and still writes only the plain view. `notes --pick` writes `lecture.review.html`, the same combined page as every other notes selection. The GUI Parse button is `parse`; Parse + Notes is `notes`.
 
 ### Pi package
 
@@ -211,15 +218,17 @@ In scope: clean full-frame slides, and screen-share-dominant recordings. A small
 
 ## Windows lecture directory
 
-The default lecture directory is:
+The default lecture directory is the study folder:
 
 ```
-C:\Users\ayden\Videos\Lectures
+C:\Users\ayden\Documents\SCHOOL\NUS Y3S1
 ```
 
-On the captain's Windows machine, `pps list` and `pps parse --latest` use that folder when it exists.
+Quote it. The path contains spaces. Under WSL the same folder is `/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1`.
 
-On any other machine (including this Linux worktree) that path is not visible. That is expected:
+That folder holds one subfolder per taught course, named with a leading number such as `5 - CG2027`, and a course keeps its Recordings inside its own folder, for example `5 - CG2027\recordings\Week5-System.mp4`. `pps list`, `--latest`, and `--find` search that folder recursively, including course subfolders. `--latest` and `--find` do that on both `parse` and `notes`. `--find` proceeds only when exactly one Recording matches. Zero matches, or more than one, exits non-zero and lists the full paths it found. `--latest` uses the newest Recording under the lecture directory, and still refuses when that directory is not accessible.
+
+On a machine that cannot see that folder:
 
 1. Pass an MP4 path to `parse` directly, or
 2. Set `PODLEPARSESSKEWL_LECTURES_DIR` to a local folder, or
@@ -227,7 +236,7 @@ On any other machine (including this Linux worktree) that path is not visible. T
 
 Your own `podleparsesskewl.toml` stays local; it is git-ignored. Only the example file is committed.
 
-Agents working on a machine that cannot see the Windows folder should retrieve the MP4s from `C:\Users\ayden\Videos\Lectures` onto the machine, then run `parse`.
+Agents working on a machine that cannot see the Windows folder should retrieve the MP4s from `C:\Users\ayden\Documents\SCHOOL\NUS Y3S1` onto the machine, then run `notes` or `parse`.
 
 ### Where the lecture directory comes from
 
@@ -237,36 +246,36 @@ For commands that use lecture configuration (`transcribe` does not), explicit se
 2. `--config <file>` (an explicitly named config file wins over the environment)
 3. `PODLEPARSESSKEWL_LECTURES_DIR`
 4. A discovered `podleparsesskewl.toml` (working directory, then `~/.config/podleparsesskewl/`)
-5. The default `C:\Users\ayden\Videos\Lectures`
+5. The default `C:\Users\ayden\Documents\SCHOOL\NUS Y3S1`
 
-Default output parent and archive parent use the same explicit-beats-ambient order, via `--default-output-dir` / `output_dir` / `PODLEPARSESSKEWL_OUTPUT_DIR` and `--archive-dir` / `archive_dir` / `PODLEPARSESSKEWL_ARCHIVE_DIR`. An explicit `-o/--output` is still this run's Lecture folder. Archive never overwrites an existing run folder; each success gets a new timestamped directory and `archive-manifest.json`. Generated Lecture files are never moved. If archive fails after notes were written, the teaching Report stays in the output folder and the error names any input that already moved.
+Default output parent and archive parent use the same explicit-beats-ambient order, via `--default-output-dir` / `output_dir` / `PODLEPARSESSKEWL_OUTPUT_DIR` and `--archive-dir` / `archive_dir` / `PODLEPARSESSKEWL_ARCHIVE_DIR`. An explicit `-o/--output` is still this run's Lecture folder. Archive never overwrites an existing run folder; each success gets a new timestamped directory and `archive-manifest.json`. Generated Lecture files are never moved. If archive fails after notes were written, `lecture.review.html` stays in the output folder and the error names any input that already moved.
 
 `pps doctor` prints the resolved path and which of these it came from.
 
 ### WSL
 
-Under WSL, a Windows lecture directory is translated automatically, so `C:\Users\ayden\Videos\Lectures` is used as `/mnt/c/Users/ayden/Videos/Lectures`. That applies to the default, the config file, the environment variable, and the flag:
+Under WSL, a Windows lecture directory is translated automatically, so `C:\Users\ayden\Documents\SCHOOL\NUS Y3S1` is used as `/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1`. That applies to the default, the config file, the environment variable, `--lectures-dir`, and `--in`. Quote the path; it contains spaces:
 
 ```bash
-python3 -m podleparsesskewl list          # already reads /mnt/c/Users/ayden/Videos/Lectures
+python3 -m podleparsesskewl list          # already reads /mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1
 python3 -m podleparsesskewl doctor        # shows the translation it applied
 ```
 
 Setting the WSL path directly still works:
 
 ```bash
-export PODLEPARSESSKEWL_LECTURES_DIR=/mnt/c/Users/ayden/Videos/Lectures
+export PODLEPARSESSKEWL_LECTURES_DIR="/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1"
 ```
 
 You can also set `PODLEPARSESSKEWL_FFMPEG` / `PODLEPARSESSKEWL_FFPROBE` if those binaries are not on `PATH`. Under WSL these accept a Windows path too (`C:\ffmpeg\bin\ffmpeg.exe` is tried as `/mnt/c/ffmpeg/bin/ffmpeg.exe`). If an override does not point at a file, `doctor` names the variable rather than reporting the tool as generically missing.
 
 ## Aesthetic HTML and teaching notes
 
-`/ezLectures` is an agent skill. It reads `lecture.json` and writes a dressed, faithful HTML view (`lecture.ez.html`). It does not re-extract Stills or re-transcribe audio.
+`pps notes` writes the faithful Still-plus-Said view in code, with the teaching view, into `lecture.review.html`. Every Still stays in order. Said is escaped and broken into paragraphs on existing newlines, not rewritten. Image `src` stays relative. `/ezLectures` remains the agent skill for a standalone dressed page (`lecture.ez.html`) from an existing Document. It does not re-extract Stills or re-transcribe audio.
 
-`/present` is the sibling skill for teaching notes. It reads the same Document and writes `lecture.present.html`: mental models grounded in Said+Shown, applications only when the lecture gave them, diagrams only where the Shown is not enough. It does not call ffmpeg or Whisper, and it does not fetch scripts or fonts from the network. `pps present` is the local/GUI generator for that same file; an agent following `/present` may then tighten the teaching pass.
+`/present` is the sibling skill for teaching notes. Standalone, it reads the same Document and writes `lecture.present.html`: mental models grounded in Said+Shown, applications only when the lecture gave them, diagrams only where the Shown is not enough. It does not call ffmpeg or Whisper, and it does not fetch scripts or fonts from the network. `pps present` is the local generator for that same file. When the run was `pps notes`, the teaching pass edits the teaching half of `lecture.review.html` in place and does not retarget standalone `/present`.
 
-`/parse-skewl` runs `pps parse`. `/parse-skewl-notes` runs `pps notes` (parse + present + optional archive) and then the `/present` teaching pass.
+`/parse-skewl` runs `pps parse`. `/parse-skewl-notes` runs `pps notes` (headless parse, both views in `lecture.review.html`, archive off unless `--archive`) and then tightens the teaching half of that page in place.
 
 Canonical skill files live under `.agents/skills/<skill>/SKILL.md`. `.claude/skills/` and `.grok/skills/` hold discovery pointers only.
 

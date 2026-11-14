@@ -178,7 +178,7 @@ class Launcher(tk.Tk):
             self._status.set(f"Parse + Notes finished. {archived}")
             messagebox.showinfo(
                 "Notes ready",
-                "lecture.present.html was written next to the Lecture Document.\n\n" + archived,
+                "lecture.review.html was written next to the Lecture Document. Open that page.\n\n" + archived,
             )
             return
         self._status.set("Could not finish. See the log. Notes stay in the output folder if they were written.")

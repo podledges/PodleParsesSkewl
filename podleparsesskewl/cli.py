@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
+import shlex
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -13,12 +16,22 @@ from podleparsesskewl import __version__, modules
 from podleparsesskewl.config import (
     DEFAULT_LECTURES_DIR,
     AppConfig,
+    find_recordings,
     lectures_dir_accessible,
     list_recordings,
     load_config,
+    local_folder,
 )
-from podleparsesskewl.deps import format_doctor, inspect_environment
+from podleparsesskewl.deps import (
+    FFMPEG_SETUP,
+    TRANSCRIBER_SETUP,
+    Environment,
+    format_doctor,
+    inspect_environment,
+    whisper_ctranslate2_available,
+)
 from podleparsesskewl.errors import PpsError, writing
+from podleparsesskewl.media import probe_recording
 from podleparsesskewl.pipeline import (
     ParseOptions,
     copy_still_images,
@@ -34,7 +47,12 @@ from podleparsesskewl.stills import (
     DEFAULT_SAMPLE_FPS,
 )
 from podleparsesskewl.timefmt import format_clock
-from podleparsesskewl.transcribe import DEFAULT_LOCAL_FILES_ROOT, DEFAULT_WHISPER_MODEL, TranscriptionOptions
+from podleparsesskewl.transcribe import (
+    DEFAULT_LOCAL_FILES_ROOT,
+    DEFAULT_WHISPER_MODEL,
+    TranscriptionOptions,
+    installed_engine_required,
+)
 from podleparsesskewl.workflow import (
     parse_and_present,
     present_lecture,
@@ -44,8 +62,9 @@ from podleparsesskewl.workflow import (
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw)
     try:
         if args.command == "modules":
             return _cmd_modules(args)
@@ -60,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "present":
             return _cmd_present(args)
         if args.command == "notes":
-            return _cmd_notes(args)
+            return _cmd_notes(args, raw)
         if args.command == "render":
             return _cmd_render(args)
         parser.print_help()
@@ -110,18 +129,21 @@ def _build_parser() -> argparse.ArgumentParser:
         if name == "alias":
             command.add_argument("alias")
 
-    listing = sub.add_parser("list", help="list Recordings in the lecture directory")
+    listing = sub.add_parser(
+        "list",
+        help="list Recordings under the lecture directory, including subfolders",
+    )
     _add_config_flags(listing)
     listing.add_argument(
         "directory",
         nargs="?",
         type=Path,
-        help="directory to list (defaults to the configured lecture directory)",
+        help="directory to list, including subfolders (defaults to the configured lecture directory)",
     )
 
     parse = sub.add_parser("parse", help="process one video into a Lecture Document and plain HTML")
     _add_config_flags(parse)
-    _add_recording_flags(parse)
+    _add_recording_flags(parse, find=True, pick=True)
     _add_parse_option_flags(parse)
 
     transcribe = sub.add_parser(
@@ -159,10 +181,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     notes = sub.add_parser(
         "notes",
-        help="parse one MP4, write lecture.present.html, and archive the input after success",
+        help="headless one-shot: parse a Recording and write both views, with no prompts",
     )
     _add_config_flags(notes)
-    _add_recording_flags(notes)
+    _add_recording_flags(notes, find=True, pick=True)
     _add_parse_option_flags(notes)
     notes.add_argument(
         "--archive-dir",
@@ -206,7 +228,13 @@ def _add_config_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = False) -> None:
+def _add_recording_flags(
+    parser: argparse.ArgumentParser,
+    *,
+    explicit: bool = False,
+    find: bool = False,
+    pick: bool = False,
+) -> None:
     parser.add_argument(
         "recording",
         **({} if explicit else {"nargs": "?"}),
@@ -217,7 +245,24 @@ def _add_recording_flags(parser: argparse.ArgumentParser, *, explicit: bool = Fa
         parser.add_argument(
             "--latest",
             action="store_true",
-            help="use the newest MP4 in the configured lecture directory",
+            help="use the newest Recording under the lecture directory, including subfolders",
+        )
+    if find:
+        parser.add_argument(
+            "--find",
+            help="name or substring to match under --in; exactly one Recording must match",
+        )
+        parser.add_argument(
+            "--in",
+            dest="in_folder",
+            type=Path,
+            help="folder to search recursively for --find",
+        )
+    if pick:
+        parser.add_argument(
+            "--pick",
+            action="store_true",
+            help="open a file picker when asked; never a fallback for a failed or ambiguous search",
         )
     parser.add_argument(
         "-o",
@@ -477,32 +522,78 @@ def _cmd_present(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_notes(args: argparse.Namespace) -> int:
-    recording = _resolve_recording(args)
-    config = _config_from_args(args)
-    output = resolve_output_dir(recording, args.output, config)
-    archive_dir = args.archive_dir if args.archive_dir is not None else config.archive_dir
-    result = parse_and_present(
-        recording,
-        output=output,
-        config=config,
-        options=_parse_options(args, output),
-        archive=_archive_choice(args),
-        archive_dir=archive_dir,
-    )
-    _print_parse(result.parse)
-    print(f"Present   {result.present.present_path}")
+def _cmd_notes(args: argparse.Namespace, argv: list[str]) -> int:
+    """One non-interactive run. Human text on stderr, one JSON object on stdout."""
+    try:
+        config = _config_from_args(args)
+        recording = _resolve_recording(args)
+        missing = notes_preflight(
+            recording=recording,
+            sidecar=args.transcript,
+            model_path=args.whisper_model_path,
+        )
+        if missing:
+            _emit_preflight_failure(missing, argv)
+            return 1
+        output = resolve_output_dir(recording, args.output, config)
+        archive_dir = args.archive_dir if args.archive_dir is not None else config.archive_dir
+        result = parse_and_present(
+            recording,
+            output=output,
+            config=config,
+            options=_parse_options(args, output),
+            archive=_archive_choice(args),
+            archive_dir=archive_dir,
+        )
+    except RecordingSelectionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        _emit_json({
+            "type": "error",
+            "error": "selection",
+            "pattern": exc.pattern,
+            "folder": str(exc.folder),
+            "matches": [str(path) for path in exc.matches],
+        })
+        return 2
+    except (PpsError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        _emit_json({"type": "error", "error": "failed", "message": str(exc)})
+        return 2
+    _print_parse(result.parse, file=sys.stderr)
+    print(f"Present   {result.present.present_path}", file=sys.stderr)
+    print(f"Review    {result.review_path}", file=sys.stderr)
     for problem in result.present.pairing_problems:
         print(f"warning: {problem}", file=sys.stderr)
     if result.archive is None:
-        print("Archive   skipped")
+        print("Archive   skipped", file=sys.stderr)
     else:
-        print(f"Archive   {result.archive.run_dir}")
-        print(f"Manifest  {result.archive.manifest_path}")
+        print(f"Archive   {result.archive.run_dir}", file=sys.stderr)
+        print(f"Manifest  {result.archive.manifest_path}", file=sys.stderr)
         for path in result.archive.moved:
-            print(f"Moved     {path}")
+            print(f"Moved     {path}", file=sys.stderr)
         for reason in result.archive.skipped:
             print(f"warning: {reason}", file=sys.stderr)
+    archive = None
+    if result.archive is not None:
+        archive = {
+            "run_dir": str(result.archive.run_dir),
+            "manifest": str(result.archive.manifest_path),
+        }
+    _emit_json({
+        "type": "result",
+        "schema": "podleparsesskewl.notes/v1",
+        "open": str(result.review_path.resolve()),
+        "artifacts": {
+            "review": str(result.review_path.resolve()),
+            "document": str(result.parse.document_path.resolve()),
+            "present": str(result.present.present_path.resolve()),
+            "html": str(result.parse.html_path.resolve()),
+            "markdown": str(result.parse.markdown_path.resolve()),
+            "transcript": str(result.parse.transcript_path.resolve()),
+        },
+        "recording": str(result.recording.resolve()),
+        "archive": archive,
+    })
     return 0
 
 
@@ -557,21 +648,178 @@ def _parse_options(args: argparse.Namespace, output: Path) -> ParseOptions:
     )
 
 
-def _print_parse(result) -> None:
-    print(f"Document  {result.document_path}")
-    print(f"HTML      {result.html_path}")
-    print(f"Markdown  {result.markdown_path}")
+def _print_parse(result, *, file=None) -> None:
+    print(f"Document  {result.document_path}", file=file)
+    print(f"HTML      {result.html_path}", file=file)
+    print(f"Markdown  {result.markdown_path}", file=file)
     transcript_path = getattr(result, "transcript_path", result.document_path.parent / "transcript.md")
-    print(f"Transcript {transcript_path}")
-    print(f"Stills    {len(result.document.stills)}")
-    print(f"Cues      {len(result.document.transcript.cues)}")
+    print(f"Transcript {transcript_path}", file=file)
+    print(f"Stills    {len(result.document.stills)}", file=file)
+    print(f"Cues      {len(result.document.transcript.cues)}", file=file)
+
+
+class RecordingSelectionError(PpsError):
+    """Zero or many Recordings matched. The matches are listed; none is chosen."""
+
+    def __init__(self, pattern: str, folder: Path, matches: tuple[Path, ...]) -> None:
+        self.pattern = pattern
+        self.folder = folder
+        self.matches = matches
+        super().__init__(_format_selection(pattern, folder, matches))
+
+
+def _format_selection(pattern: str, folder: Path, matches: tuple[Path, ...]) -> str:
+    if not matches:
+        return f"no Recording matched {pattern!r} in {folder}"
+    lines = [f"{len(matches)} Recordings matched {pattern!r} in {folder}"]
+    lines.extend(str(path) for path in matches)
+    lines.append("Narrow the pattern so exactly one Recording matches.")
+    return "\n".join(lines)
+
+
+def notes_preflight(
+    env: Environment | None = None,
+    *,
+    recording: Path | None = None,
+    sidecar: Path | None = None,
+    model_path: Path | None = None,
+) -> tuple[str, ...]:
+    """Names of missing tools that block this notes run. Empty means parse may start."""
+    environment = env if env is not None else inspect_environment()
+    missing: list[str] = []
+    if not environment.ffmpeg.found:
+        missing.append("ffmpeg")
+    if not environment.ffprobe.found:
+        missing.append("ffprobe")
+    if _notes_missing_transcriber(environment, recording, sidecar, model_path):
+        missing.append("transcriber")
+    return tuple(missing)
+
+
+def _notes_missing_transcriber(
+    env: Environment,
+    recording: Path | None,
+    sidecar: Path | None,
+    model_path: Path | None,
+) -> bool:
+    if env.can_transcribe_audio or _ctranslate2_with_model_path(env, model_path):
+        return False
+    if recording is None or not recording.is_file():
+        return False
+    return installed_engine_required(
+        recording,
+        sidecar=sidecar,
+        has_audio=_probed_has_audio(env, recording, sidecar),
+    )
+
+
+def _ctranslate2_with_model_path(env: Environment, model_path: Path | None) -> bool:
+    return model_path is not None and whisper_ctranslate2_available(env)
+
+
+def _probed_has_audio(
+    env: Environment,
+    recording: Path | None,
+    sidecar: Path | None,
+) -> bool | None:
+    if not installed_engine_required(recording, sidecar=sidecar, has_audio=None):
+        return None
+    if recording is None or not recording.is_file():
+        return None
+    if not env.ffmpeg.found or not env.ffprobe.found:
+        return None
+    if getattr(env.ffprobe, "path", None) is None:
+        return None
+    return probe_recording(recording, env).has_audio
+
+
+def quote_command(parts: list[str], *, windows: bool) -> str:
+    """Quote a command so a path with spaces survives the shell it will be pasted into."""
+    if windows:
+        return subprocess.list2cmdline(parts)
+    return shlex.join(parts)
+
+
+def format_retry(argv: list[str]) -> str:
+    return quote_command(
+        [sys.executable, "-m", "podleparsesskewl", *argv],
+        windows=platform.system() == "Windows",
+    )
+
+
+def pick_recording() -> Path:
+    """File picker for a person at a display. Called only when ``--pick`` was passed."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:
+        raise PpsError(
+            "the file picker needs a display. "
+            "Pass a Recording path, or use --find with --in. "
+            f"({type(exc).__name__}: {exc})"
+        ) from exc
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        raise PpsError(
+            "the file picker could not open a window. "
+            "Pass a Recording path, or use --find with --in. "
+            f"({exc})"
+        ) from exc
+    root.withdraw()
+    try:
+        chosen = filedialog.askopenfilename(
+            title="Choose a Recording",
+            filetypes=[
+                ("Recordings", "*.mp4 *.m4v *.mov"),
+                ("All files", "*.*"),
+            ],
+        )
+    except tk.TclError as exc:
+        raise PpsError(
+            "the file picker could not open a window. "
+            "Pass a Recording path, or use --find with --in. "
+            f"({exc})"
+        ) from exc
+    finally:
+        root.destroy()
+    if not chosen:
+        raise PpsError("no Recording was chosen")
+    return Path(chosen)
+
+
+def _emit_json(payload: dict) -> None:
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def _emit_preflight_failure(missing: tuple[str, ...], argv: list[str]) -> None:
+    print("notes stopped before parse.", file=sys.stderr)
+    if "ffmpeg" in missing or "ffprobe" in missing:
+        print(FFMPEG_SETUP, file=sys.stderr)
+    if "transcriber" in missing:
+        print(TRANSCRIBER_SETUP, file=sys.stderr)
+    retry = format_retry(argv)
+    print(f"Retry: {retry}", file=sys.stderr)
+    _emit_json({
+        "type": "error",
+        "error": "preflight",
+        "missing": list(missing),
+        "retry": retry,
+    })
 
 
 def _resolve_recording(args: argparse.Namespace) -> Path:
-    if args.recording is not None:
+    mode = _selection_mode(args)
+    if mode == "path":
         return args.recording
-    if not args.latest:
-        raise PpsError("pass a Recording path, or use --latest with an accessible lecture directory")
+    if mode == "pick":
+        return pick_recording()
+    if mode == "find":
+        folder = local_folder(args.in_folder)
+        matches = find_recordings(folder, args.find)
+        if len(matches) != 1:
+            raise RecordingSelectionError(args.find, folder, tuple(matches))
+        return matches[0]
     config = _config_from_args(args)
     if not lectures_dir_accessible(config.lectures_dir):
         raise PpsError(
@@ -582,6 +830,28 @@ def _resolve_recording(args: argparse.Namespace) -> Path:
     if not recordings:
         raise PpsError(f"no Recordings found in {config.lectures_dir}")
     return recordings[0]
+
+
+def _selection_mode(args: argparse.Namespace) -> str:
+    modes: list[str] = []
+    if getattr(args, "recording", None) is not None:
+        modes.append("path")
+    if getattr(args, "latest", False):
+        modes.append("latest")
+    if getattr(args, "find", None):
+        modes.append("find")
+    if getattr(args, "pick", False):
+        modes.append("pick")
+    if getattr(args, "in_folder", None) is not None and "find" not in modes:
+        raise PpsError("pass --find with --in")
+    if "find" in modes and getattr(args, "in_folder", None) is None:
+        raise PpsError("pass --in with --find")
+    if len(modes) != 1:
+        hint = "pass one Recording path, or --latest, or --find with --in"
+        if hasattr(args, "pick"):
+            hint += ", or --pick"
+        raise PpsError(hint)
+    return modes[0]
 
 
 def _config_from_args(args: argparse.Namespace) -> AppConfig:

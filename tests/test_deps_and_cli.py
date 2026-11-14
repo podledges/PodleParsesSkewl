@@ -41,6 +41,29 @@ class ConfigTests(unittest.TestCase):
                     config = load_config()
         self.assertEqual(str(config.lectures_dir), DEFAULT_LECTURES_DIR)
         self.assertEqual(config.lectures_dir_source, "default")
+        self.assertFalse(config.archive_after_notes)
+
+    def test_default_study_path_keeps_spaces_and_translates_under_wsl(self) -> None:
+        self.assertEqual(DEFAULT_LECTURES_DIR, r"C:\Users\ayden\Documents\SCHOOL\NUS Y3S1")
+        self.assertEqual(
+            windows_path_to_wsl(DEFAULT_LECTURES_DIR),
+            "/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1",
+        )
+        env = {key: value for key, value in os.environ.items() if key != "PODLEPARSESSKEWL_LECTURES_DIR"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch("podleparsesskewl.config._find_config", return_value=None):
+                with mock.patch("podleparsesskewl.config.running_under_wsl", return_value=True):
+                    config = load_config()
+        self.assertEqual(config.lectures_dir, Path("/mnt/c/Users/ayden/Documents/SCHOOL/NUS Y3S1"))
+        self.assertIn("NUS Y3S1", config.lectures_dir_source)
+
+    def test_archive_after_notes_can_still_be_turned_on(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config_file = Path(raw) / "my.toml"
+            config_file.write_text("archive_after_notes = true\n", encoding="utf-8")
+            with mock.patch("podleparsesskewl.config.running_under_wsl", return_value=False):
+                config = load_config(config_path=config_file)
+        self.assertTrue(config.archive_after_notes)
 
     def test_env_overrides_default_lectures_dir(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

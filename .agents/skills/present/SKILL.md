@@ -15,7 +15,7 @@ Turn one Lecture Document into a single self-contained HTML teaching Report. Sib
 
 ## Completion
 
-Done when a person can open `lecture.present.html` offline and learn the lecture's ideas without re-watching, without Obsidian, and without a network. Every claim is grounded in Said or Shown. Do not extract frames. Do not transcribe. Do not invent speech, numbers, names, or diagrams.
+Done when a person can open the teaching page offline and learn the lecture's ideas without re-watching, without Obsidian, and without a network. Standalone `/present` writes `lecture.present.html`. When the run was `pps notes`, that page is the teaching half of `lecture.review.html`. Every claim is grounded in Said or Shown. Do not extract frames. Do not transcribe. Do not invent speech, numbers, names, or diagrams.
 
 ## Steps
 
@@ -24,8 +24,8 @@ Done when a person can open `lecture.present.html` offline and learn the lecture
 3. Read the Shown images. Do not write from Said alone. The Still is often the real structure of the lecture.
 4. Build a topic outline from **body coverage**, not from the first title Still. Consecutive Stills that are one progressive build may become one topic; a full visual change is a new topic. Record which `still.id`s belong to each topic. Do not drop a topic that has a Still or a substantial Said block just because an early outline Still omitted it.
 5. For each topic, write teaching notes in the structure below. Ground every claim in Said or Shown. If the lecturer was vague, say so; do not import a textbook.
-6. Write one HTML file next to the Document, default name `lecture.present.html`, unless the user named another path. Keep image `src` relative (`stills/still-001.png`). CSS in a `<style>` block. System fonts only.
-7. Optional local skeleton: `python3 -m podleparsesskewl present path/to/lecture.json` writes a grounded extractive `lecture.present.html`. Use it as a starting file, then do the teaching pass. Do not treat the skeleton as finished if mental models are still just restated Said.
+6. When the run was `pps notes`, edit the teaching half of `lecture.review.html` in place and do not retarget standalone `/present`, which still writes `lecture.present.html`. Otherwise write one HTML file next to the Document, default name `lecture.present.html`, unless the user named another path. Keep image `src` relative (`stills/still-001.png`). CSS in a `<style>` block. System fonts only.
+7. Optional local skeleton: `python3 -m podleparsesskewl present path/to/lecture.json` writes a grounded extractive `lecture.present.html`. Use it as a starting file, then do the teaching pass. Do not treat the skeleton as finished if mental models are still just restated Said. When the run was `pps notes`, skip this command and edit the teaching half already in `lecture.review.html`.
 
 If you are a manager agent, dispatch an implementation subagent with the Document path and these steps.
 

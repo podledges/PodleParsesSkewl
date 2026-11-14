@@ -47,6 +47,31 @@ class TranscriptionOptions:
 
 
 
+def installed_engine_required(
+    recording: Path | None,
+    *,
+    sidecar: Path | None = None,
+    has_audio: bool | None = None,
+    model_path: Path | None = None,
+) -> bool:
+    """Whether load_transcript will refuse until a transcription engine is installed.
+
+    An explicit transcript or an adjacent sidecar supplies Said without an engine.
+    A Recording with no audio track is load_transcript's nothing-to-transcribe
+    error, not a missing engine. An explicit model path uses that same gate.
+    """
+    chosen = sidecar if recording is None else _chosen_sidecar(recording, sidecar)
+    if chosen is not None:
+        return False
+    if has_audio is False:
+        return False
+    return model_path is None
+
+
+def _chosen_sidecar(recording: Path, sidecar: Path | None) -> Path | None:
+    return sidecar if sidecar is not None else discover_sidecar(recording)
+
+
 def load_transcript(
     recording: Path,
     env: Environment,
@@ -57,7 +82,7 @@ def load_transcript(
     transcription: TranscriptionOptions | None = None,
 ) -> Transcript:
     """Prefer an explicit or adjacent sidecar; otherwise transcribe locally."""
-    chosen = sidecar if sidecar is not None else discover_sidecar(recording)
+    chosen = _chosen_sidecar(recording, sidecar)
     if chosen is not None:
         if not chosen.is_file():
             raise PpsError(f"transcript sidecar not found: {chosen}")
@@ -69,7 +94,12 @@ def load_transcript(
             "or with --transcript."
         )
     options = transcription or TranscriptionOptions()
-    if not env.can_transcribe_audio and options.model_path is None:
+    if not env.can_transcribe_audio and installed_engine_required(
+        recording,
+        sidecar=sidecar,
+        has_audio=has_audio,
+        model_path=options.model_path,
+    ):
         raise PpsError(
             "no caption sidecar found and no local transcription engine is available. "
             "Place a .srt, .vtt, or .json file next to the Recording, or install "

@@ -22,8 +22,8 @@ CI (GitHub Actions) is the remote automated check machine. Do not treat CI green
 Canonical definitions live under `.agents/skills/<skill>/SKILL.md`. Harness entries in `.claude/skills/` and `.grok/skills/` are discovery pointers, never copies.
 
 - `/parse-skewl` runs this repo's parser on one local MP4.
-- `/present` writes teaching notes (`lecture.present.html`) from an existing `lecture.json`. Sibling of `/ezLectures`; it teaches, it does not replay Said verbatim.
-- `/parse-skewl-notes` runs parse, `/present`, and optional input archive.
+- `/present` writes teaching notes (`lecture.present.html`) from an existing `lecture.json`. When the run was `pps notes`, edit the teaching half of `lecture.review.html` in place. Sibling of `/ezLectures`; it teaches, it does not replay Said verbatim.
+- `/parse-skewl-notes` runs `pps notes` (both views in `lecture.review.html`, archive off unless asked) and then that teaching pass.
 - `/ezLectures` renders a faithful aesthetic HTML view from an existing `lecture.json`.
 - The Pi package registers `/transcribe`, `pps_transcribe`, and `/skill:transcribe`; setup and absolute runtime/model environment variables are in `README.md`.
 - `/module` syncs the private modules clone, resolves a module mention, shows or edits its knowledge tree, and adds modules or aliases. Canonical file `.agents/skills/module/SKILL.md`.
@@ -38,7 +38,7 @@ Before module work, run `python3 -m podleparsesskewl modules sync` (pull with re
 
 ## GUI
 
-Windows launcher: `podleparsesskewl/gui.py`. Next-step issue plan and open captain choices: `docs/gui-implementation-plan.md`.
+Windows launcher: `podleparsesskewl/gui.py`. The Windows GUI rebuild is not the interface being built. The headless command surface is. Settled answers: `docs/gui-implementation-plan.md`.
 
 ## Constraints
 

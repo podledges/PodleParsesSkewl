@@ -1,8 +1,8 @@
 ---
 name: parse-skewl-notes
 description: >
-  Parse a lecture MP4 with PodleParsesSkewl and write teaching notes in one
-  flow. Use when the user runs /parse-skewl-notes, wants parse plus notes,
+  Parse a lecture MP4 with PodleParsesSkewl and write both views in one
+  headless run. Use when the user runs /parse-skewl-notes, wants parse plus notes,
   or asks to process a recording all the way to study notes. Prefer this
   over chaining /parse-skewl and /present yourself.
 ---

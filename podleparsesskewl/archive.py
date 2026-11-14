@@ -127,6 +127,7 @@ def _generated_outputs(result_paths: dict[str, str], output_dir: Path) -> set[Pa
     generated = {
         output_dir / "lecture.json",
         output_dir / "lecture.present.html",
+        output_dir / "lecture.review.html",
         output_dir / "lecture.ez.html",
     }
     for value in result_paths.values():

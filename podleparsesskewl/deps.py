@@ -44,6 +44,31 @@ def inspect_environment() -> Environment:
     return Environment(ffmpeg=ffmpeg, ffprobe=ffprobe, transcriber=transcriber)
 
 
+def whisper_ctranslate2_available(env: Environment) -> bool:
+    """Whether this environment has the whisper-ctranslate2 CLI."""
+    status = getattr(env, "transcriber", None)
+    if status is None or getattr(status, "found", True):
+        return False
+    return getattr(status, "path", None) is not None
+
+
+FFMPEG_SETUP = """\
+Install ffmpeg, which includes ffprobe. This program does not download or install it.
+Debian / Ubuntu: sudo apt-get install ffmpeg
+macOS: brew install ffmpeg
+Nix: nix-shell
+Windows: install a legal Windows ffmpeg package and put its bin directory on PATH, or set PODLEPARSESSKEWL_FFMPEG and PODLEPARSESSKEWL_FFPROBE.
+""".strip()
+
+TRANSCRIBER_SETUP = """\
+Install a local transcription engine. This program does not download or install an engine or model files.
+python3 -m pip install -e ".[transcribe]"
+Point --local-files-root at an existing model cache, or pass --whisper-model-path to an existing model snapshot.
+On Nix/WSL, set the libstdc++ path before faster-whisper can run:
+export LD_LIBRARY_PATH="$(nix-build --no-out-link '<nixpkgs>' -A stdenv.cc.cc.lib)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+""".strip()
+
+
 def format_doctor(env: Environment) -> str:
     lines = ["PodleParsesSkewl doctor", ""]
     git_path = shutil.which("git")

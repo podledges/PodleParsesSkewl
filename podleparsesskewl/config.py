@@ -11,7 +11,7 @@ from pathlib import Path
 
 from podleparsesskewl.errors import PpsError
 
-DEFAULT_LECTURES_DIR = r"C:\Users\ayden\Videos\Lectures"
+DEFAULT_LECTURES_DIR = r"C:\Users\ayden\Documents\SCHOOL\NUS Y3S1"
 ENV_LECTURES_DIR = "PODLEPARSESSKEWL_LECTURES_DIR"
 ENV_OUTPUT_DIR = "PODLEPARSESSKEWL_OUTPUT_DIR"
 ENV_ARCHIVE_DIR = "PODLEPARSESSKEWL_ARCHIVE_DIR"
@@ -28,7 +28,7 @@ class AppConfig:
     output_dir_source: str = "unset"
     archive_dir: Path | None = None
     archive_dir_source: str = "unset"
-    archive_after_notes: bool = True
+    archive_after_notes: bool = False
     modules_dir: Path = Path("modules")
     modules_dir_source: str = "default"
 
@@ -88,7 +88,7 @@ def load_config(
         use_env=use_env,
     )
     modules_path, modules_label = _maybe_translate(modules_value, modules_source)
-    archive_after = _toml_bool(file_payload, "archive_after_notes", True)
+    archive_after = _toml_bool(file_payload, "archive_after_notes", False)
     lectures_path, lectures_label = _maybe_translate(lectures_value, lectures_source)
     output_path, output_label = (
         _maybe_translate(output_value, output_source) if output_value else (None, "unset")
@@ -135,15 +135,64 @@ def lectures_dir_accessible(path: Path) -> bool:
         return False
 
 
+RECORDING_SUFFIXES = {".mp4", ".m4v", ".mov"}
+
+
+def _recording_files(directory: Path) -> list[Path]:
+    """Recording files under directory, including course subfolders.
+
+    Does not follow directory links. Callers choose sort order and matching.
+    """
+    found: list[Path] = []
+    for dirpath, _dirnames, filenames in os.walk(directory, followlinks=False):
+        for name in filenames:
+            path = Path(dirpath) / name
+            if path.suffix.lower() not in RECORDING_SUFFIXES or not path.is_file():
+                continue
+            found.append(path)
+    return found
+
+
 def list_recordings(directory: Path) -> list[Path]:
     if not lectures_dir_accessible(directory):
         return []
-    found = [
-        path
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix.lower() in {".mp4", ".m4v", ".mov"}
-    ]
+    found = _recording_files(directory)
     return sorted(found, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def local_folder(value: Path | str) -> Path:
+    """Use a Windows folder as its WSL mount when this process is under WSL.
+
+    The study path contains spaces. Callers must quote it; this only translates
+    the path, it does not shell-split it.
+    """
+    text = os.fspath(value)
+    if running_under_wsl():
+        translated = windows_path_to_wsl(text)
+        if translated is not None:
+            return Path(translated)
+    return Path(text)
+
+
+def find_recordings(directory: Path, pattern: str) -> list[Path]:
+    """Recursive substring search. Returns full paths, sorted, and never picks one.
+
+    The pattern is a name or substring, matched case-insensitively against each
+    Recording's path relative to ``directory``. A flat listing is not enough:
+    Recordings sit in a course folder, then a recordings folder.
+    """
+    if not pattern.strip():
+        raise PpsError("a Recording pattern must not be empty")
+    folder = local_folder(directory)
+    if not lectures_dir_accessible(folder):
+        raise PpsError(f"folder is not accessible: {folder}")
+    needle = pattern.replace("\\", "/").casefold()
+    found = [
+        path.resolve()
+        for path in _recording_files(folder)
+        if needle in path.relative_to(folder).as_posix().casefold()
+    ]
+    return sorted(found, key=lambda path: path.as_posix().casefold())
 
 
 def _resolve_required_path(

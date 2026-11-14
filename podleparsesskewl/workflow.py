@@ -10,7 +10,7 @@ from podleparsesskewl.captions import discover_sidecar
 from podleparsesskewl.config import AppConfig, lectures_dir_accessible, load_config
 from podleparsesskewl.deps import Environment
 from podleparsesskewl.errors import PpsError
-from podleparsesskewl.present import PresentResult, write_present
+from podleparsesskewl.present import PresentResult, write_present, write_review
 from podleparsesskewl.report import pairing_problems
 from podleparsesskewl.pipeline import (
     ParseOptions,
@@ -39,7 +39,7 @@ def build_notes_argv(
     output: str = "",
     transcript: str = "",
     archive_dir: str = "",
-    archive: bool = True,
+    archive: bool = False,
 ) -> list[str]:
     """CLI arguments the GUI Parse + Notes button runs."""
     args = ["notes", recording]
@@ -83,6 +83,7 @@ class NotesRunResult:
     recording: Path
     sidecar: Path | None
     output_dir: Path
+    review_path: Path
 
 
 def resolve_output_dir(
@@ -184,11 +185,12 @@ def parse_and_present(
     archive: bool | None = None,
     archive_dir: Path | None = None,
 ) -> NotesRunResult:
-    """Parse one Recording, write teaching notes, then optionally archive inputs.
+    """Parse one Recording, write both views, then optionally archive inputs.
 
-    Archive runs only after notes are written. A failed parse or present leaves
-    the Recording where it was. A failed archive leaves the notes in place and
-    raises, naming any files that did move.
+    The page to open is lecture.review.html. Archive runs only after that page
+    exists. A failed parse or present leaves the Recording where it was. A failed
+    archive leaves the written pages in place and raises, naming any files that
+    did move.
     """
     cfg = config if config is not None else load_config()
     output_dir = resolve_output_dir(recording, output, cfg)
@@ -201,6 +203,7 @@ def parse_and_present(
         env=env,
     )
     present_result = present_lecture(parse_result.document_path)
+    review_path = write_review(parse_result.document, parse_result.document_path.parent)
     should_archive = cfg.archive_after_notes if archive is None else archive
     archive_result = None
     if should_archive:
@@ -215,6 +218,7 @@ def parse_and_present(
                 "html": str(parse_result.html_path),
                 "markdown": str(parse_result.markdown_path),
                 "present": str(present_result.present_path),
+                "review": str(review_path),
             },
             extra={
                 "title": parse_result.document.title,
@@ -229,4 +233,5 @@ def parse_and_present(
         recording=recording,
         sidecar=sidecar,
         output_dir=output_dir,
+        review_path=review_path,
     )
